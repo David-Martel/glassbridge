@@ -6,10 +6,16 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
     "typescript": "^5.9.3",
     "vite": "^7.1.7"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.1"
   }
 }

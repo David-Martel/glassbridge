@@ -16,7 +16,9 @@
       "!vendor",
       "!data",
       "!apps/server/dist",
-      "!apps/web/dist"
+      "!apps/web/dist",
+      "!apps/web/src-tauri/gen",
+      "!apps/web/src-tauri/target"
     ]
   }
 }

@@ -113,6 +113,46 @@ export async function runCommand(command: string, args: string[], cwd: string) {
   );
 }
 
+export async function runCommandBuffer(
+  command: string,
+  args: string[],
+  cwd: string,
+) {
+  return new Promise<{ stdout: Buffer; stderr: string; exitCode: number }>(
+    (resolve, reject) => {
+      const child = spawn(command, args, {
+        cwd,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      });
+
+      const stdoutChunks: Buffer[] = [];
+      let stderr = "";
+
+      child.stdout.on("data", (chunk: Buffer) => {
+        stdoutChunks.push(chunk);
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", reject);
+      child.on("close", (exitCode) => {
+        if (exitCode && exitCode !== 0) {
+          reject(
+            new Error(stderr || `${command} exited with code ${exitCode}`),
+          );
+          return;
+        }
+        resolve({
+          stdout: Buffer.concat(stdoutChunks),
+          stderr,
+          exitCode: exitCode ?? 0,
+        });
+      });
+    },
+  );
+}
+
 async function resolveToolPath(tool: ToolName, manifest: ToolManifest | null) {
   const fromManifest = manifest?.[tool]?.executablePath;
   if (fromManifest && (await exists(fromManifest))) {

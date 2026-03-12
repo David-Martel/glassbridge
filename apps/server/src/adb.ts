@@ -1,6 +1,11 @@
 import { spawn } from "node:child_process";
 import { repoRoot } from "./config.js";
-import { getAdbPath, getScrcpyPath, runCommand } from "./tooling.js";
+import {
+  getAdbPath,
+  getScrcpyPath,
+  runCommand,
+  runCommandBuffer,
+} from "./tooling.js";
 
 export type DeviceRecord = {
   serial: string;
@@ -82,6 +87,17 @@ export async function stopPackage(serial: string, packageName: string) {
 
 export async function shellCommand(serial: string, command: string) {
   return runAdb(serial, ["shell", command]);
+}
+
+export async function captureScreenshot(serial: string) {
+  const adbPath = await getAdbPath();
+  const result = await runCommandBuffer(
+    adbPath,
+    ["-s", serial, "exec-out", "screencap", "-p"],
+    repoRoot,
+  );
+
+  return result.stdout;
 }
 
 export async function startScrcpy(

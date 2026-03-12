@@ -1,6 +1,9 @@
 node_modules/
 dist/
 apps/*/dist/
+apps/web/src-tauri/target/
+apps/web/src-tauri/gen/
+output/
 vendor/platform-tools/
 vendor/scrcpy/
 vendor/cache/

@@ -8,6 +8,9 @@
   ],
   "scripts": {
     "dev": "concurrently -n server,web -c cyan,yellow \"npm run dev --workspace apps/server\" \"npm run dev --workspace apps/web\"",
+    "desktop": "powershell -ExecutionPolicy Bypass -File .\\Launch-PixelDesktop.ps1",
+    "desktop:build": "powershell -ExecutionPolicy Bypass -File .\\Launch-PixelDesktop.ps1 -BuildOnly",
+    "desktop:check": "powershell -ExecutionPolicy Bypass -File .\\Launch-PixelDesktop.ps1 -CheckOnly",
     "build": "npm run build --workspace apps/server && npm run build --workspace apps/web",
     "start": "npm run start --workspace apps/server",
     "bootstrap:tools": "node ./tools/bootstrap-tools.mjs",
@@ -18,12 +21,15 @@
     "test:frontend": "vitest run tests/frontend-ui.test.ts",
     "test:integration": "vitest run tests/frontend-backend.integration.test.ts",
     "test:device": "npm run build && npm run test:backend && npm run test:integration",
-    "test:ci": "npm run build && npm run test:frontend"
+    "test:desktop": "npm run build --workspace apps/server && npm run desktop:check && npm run desktop:build",
+    "test:ci": "npm run build && npm run test:frontend",
+    "test:playwright:headed": "npm run build && node tests/playwright-live-headed.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
     "concurrently": "^9.2.1",
     "jsdom": "^26.1.0",
+    "playwright": "^1.58.2",
     "vitest": "^3.2.4"
   }
 }

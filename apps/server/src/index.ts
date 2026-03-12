@@ -5,6 +5,7 @@ import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { z } from "zod";
 import {
+  captureScreenshot,
   type DeviceRecord,
   inputText,
   launchPackage,
@@ -63,6 +64,15 @@ app.get("/api/devices", async () => ({
 app.get("/api/devices/:serial/apps", async (request) => {
   const { serial } = request.params as { serial: string };
   return { packages: await listPackages(serial) };
+});
+
+app.get("/api/devices/:serial/screenshot", async (request, reply) => {
+  const { serial } = request.params as { serial: string };
+  const screenshot = await captureScreenshot(serial);
+  reply
+    .header("Content-Type", "image/png")
+    .header("Cache-Control", "no-store")
+    .send(screenshot);
 });
 
 app.get("/api/approved-devices", async () => ({

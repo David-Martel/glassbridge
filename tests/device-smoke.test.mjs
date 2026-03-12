@@ -128,6 +128,22 @@ test("accepts a quick control action", async () => {
   assert.equal(controlPayload.exitCode, 0);
 });
 
+test("returns a valid PNG screenshot for the connected target device", async () => {
+  assert.ok(selectedDevice, "No target device selected");
+  const response = await fetch(
+    `${baseUrl}/api/devices/${encodeURIComponent(selectedDevice.serial)}/screenshot`,
+  );
+  const screenshot = new Uint8Array(await response.arrayBuffer());
+
+  assert.equal(response.ok, true);
+  assert.equal(response.headers.get("content-type"), "image/png");
+  assert.ok(screenshot.byteLength > 1024, "Expected non-trivial PNG output");
+  assert.deepEqual(
+    Array.from(screenshot.slice(0, 8)),
+    [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  );
+});
+
 test("serves the built frontend shell", async () => {
   const response = await fetch(baseUrl);
   const html = await response.text();

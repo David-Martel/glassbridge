@@ -20,20 +20,43 @@ const approvedDevices: Array<{
   model: string | null;
   lastSeenAt: string;
 }> = [];
+const screenshotBytes = Uint8Array.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49,
+  0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04,
+  0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44,
+  0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xff, 0x1f, 0x00, 0x03, 0x03, 0x02, 0x00,
+  0xef, 0x4f, 0xc5, 0xd3, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+  0x42, 0x60, 0x82,
+]);
 
 class MockWebSocket {
   onmessage = null;
   onclose = null;
 }
 
+const originalCreateObjectURL = URL.createObjectURL;
+const originalRevokeObjectURL = URL.revokeObjectURL;
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  if (originalCreateObjectURL) {
+    URL.createObjectURL = originalCreateObjectURL;
+  } else {
+    delete URL.createObjectURL;
+  }
+  if (originalRevokeObjectURL) {
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  } else {
+    delete URL.revokeObjectURL;
+  }
   document.body.innerHTML = "";
 });
 
 test("frontend renders roster and posts approval actions", async () => {
   document.body.innerHTML = `<div id="app"></div>`;
+  URL.createObjectURL = vi.fn(() => "blob:mock-screen-preview");
+  URL.revokeObjectURL = vi.fn();
 
   const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -86,6 +109,13 @@ test("frontend renders roster and posts approval actions", async () => {
       return jsonResponse({ packages: ["com.example.pixelapp"] });
     }
 
+    if (input.includes("/api/devices/") && input.includes("/screenshot")) {
+      return new Response(screenshotBytes, {
+        status: 200,
+        headers: { "Content-Type": "image/png" },
+      });
+    }
+
     return jsonResponse({ ok: true });
   });
 
@@ -98,6 +128,8 @@ test("frontend renders roster and posts approval actions", async () => {
 
   expect(document.body.textContent).toContain("Pixel 10 Pro XL");
   expect(document.body.textContent).toContain("Guided Help");
+  const screenPreview = await waitForScreenPreview();
+  expect(screenPreview?.src).toContain("blob:mock-screen-preview");
 
   const approveButton = [...document.querySelectorAll("button")].find(
     (button) => button.textContent?.includes("Approve"),
@@ -129,4 +161,19 @@ async function settle() {
   for (let index = 0; index < 6; index += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
+}
+
+async function waitForScreenPreview(timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const screenPreview = document.querySelector<HTMLImageElement>(
+      "img[alt='Device screen preview']",
+    );
+    if (screenPreview) {
+      return screenPreview;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  return null;
 }

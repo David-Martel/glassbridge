@@ -131,6 +131,12 @@ h1 {
   box-shadow: 0 18px 45px rgba(44, 79, 65, 0.08);
 }
 
+.alert-card {
+  margin-bottom: 1rem;
+  border-color: rgba(153, 27, 27, 0.18);
+  background: rgba(255, 244, 244, 0.94);
+}
+
 .section-head,
 .device-top {
   display: flex;
@@ -228,6 +234,21 @@ h1 {
   gap: 0.75rem;
 }
 
+.screen-toolbar {
+  grid-template-columns: auto auto;
+  align-items: center;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.toggle input {
+  width: auto;
+}
+
 .inline-form {
   margin-top: 0.9rem;
   grid-template-columns: 1fr 1fr auto;
@@ -259,6 +280,81 @@ h1 {
 .fleet-time {
   color: #4b6b60;
   font-size: 0.9rem;
+}
+
+.screen-frame {
+  margin-top: 0.75rem;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(24, 59, 48, 0.12);
+  background: #10201b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.85rem;
+}
+
+.screen-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.screen-panel-landscape {
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.6fr);
+  align-items: start;
+}
+
+.screen-frame-portrait {
+  min-height: 520px;
+}
+
+.screen-frame-landscape {
+  min-height: 320px;
+}
+
+.screen-frame-square,
+.screen-frame-unknown {
+  min-height: 420px;
+}
+
+.screen-preview {
+  display: block;
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  cursor: crosshair;
+  user-select: none;
+}
+
+.screen-preview-landscape {
+  max-height: 56vh;
+}
+
+.screen-preview-portrait,
+.screen-preview-square,
+.screen-preview-unknown {
+  max-height: 72vh;
+}
+
+.screen-inspector {
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+}
+
+.screen-stat {
+  padding: 0.8rem 0.9rem;
+  border-radius: 16px;
+  background: rgba(239, 246, 242, 0.95);
+  display: grid;
+  gap: 0.25rem;
+}
+
+.screen-stat span {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #547367;
 }
 
 .log-list pre {
@@ -301,6 +397,10 @@ h1 {
 
   .help-rail {
     position: static;
+  }
+
+  .screen-panel-landscape {
+    grid-template-columns: 1fr;
   }
 }
 
