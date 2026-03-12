@@ -25,28 +25,6 @@ function Invoke-DesktopCargo {
     [string[]]$AdditionalArgs = @()
   )
 
-  $usesCargoTools = Initialize-CargoToolsBridge
-  if ($usesCargoTools -and (Get-Command Invoke-CargoWrapper -ErrorAction SilentlyContinue)) {
-    $previousQuality = $env:CARGOTOOLS_ENFORCE_QUALITY
-    $previousPostTests = $env:CARGOTOOLS_RUN_TESTS_AFTER_BUILD
-    $previousPostDocs = $env:CARGOTOOLS_RUN_DOCTESTS_AFTER_BUILD
-
-    $env:CARGOTOOLS_ENFORCE_QUALITY = "0"
-    $env:CARGOTOOLS_RUN_TESTS_AFTER_BUILD = "0"
-    $env:CARGOTOOLS_RUN_DOCTESTS_AFTER_BUILD = "0"
-    try {
-      Invoke-CargoWrapper -Command $Command -AdditionalArgs $AdditionalArgs -WorkingDirectory $repoRoot
-      if ($LASTEXITCODE -ne 0) {
-        throw "CargoTools build failed with exit code $LASTEXITCODE."
-      }
-      return
-    } finally {
-      $env:CARGOTOOLS_ENFORCE_QUALITY = $previousQuality
-      $env:CARGOTOOLS_RUN_TESTS_AFTER_BUILD = $previousPostTests
-      $env:CARGOTOOLS_RUN_DOCTESTS_AFTER_BUILD = $previousPostDocs
-    }
-  }
-
   & cargo $Command @AdditionalArgs
   if ($LASTEXITCODE -ne 0) {
     throw "cargo $Command failed with exit code $LASTEXITCODE."
