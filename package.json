@@ -1,0 +1,22 @@
+{
+  "name": "pixel-android-control-framework",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/server",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c cyan,yellow \"npm run dev --workspace apps/server\" \"npm run dev --workspace apps/web\"",
+    "build": "npm run build --workspace apps/server && npm run build --workspace apps/web",
+    "start": "npm run start --workspace apps/server",
+    "bootstrap:tools": "node ./tools/bootstrap-tools.mjs",
+    "verify:tools": "node ./tools/bootstrap-tools.mjs --verify",
+    "lint": "biome check .",
+    "test:device": "npm run build && node --test tests/device-smoke.test.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.4",
+    "concurrently": "^9.2.1"
+  }
+}

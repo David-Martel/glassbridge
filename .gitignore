@@ -1,0 +1,11 @@
+node_modules/
+dist/
+apps/*/dist/
+vendor/platform-tools/
+vendor/scrcpy/
+vendor/cache/
+vendor/tool-manifest.json
+data/*.db
+data/*.db-shm
+data/*.db-wal
+*.log
