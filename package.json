@@ -13,10 +13,17 @@
     "bootstrap:tools": "node ./tools/bootstrap-tools.mjs",
     "verify:tools": "node ./tools/bootstrap-tools.mjs --verify",
     "lint": "biome check .",
-    "test:device": "npm run build && node --test tests/device-smoke.test.mjs"
+    "test": "npm run build && npm run test:frontend && npm run test:backend && npm run test:integration",
+    "test:backend": "node --test tests/device-smoke.test.mjs",
+    "test:frontend": "vitest run tests/frontend-ui.test.ts",
+    "test:integration": "vitest run tests/frontend-backend.integration.test.ts",
+    "test:device": "npm run build && npm run test:backend && npm run test:integration",
+    "test:ci": "npm run build && npm run test:frontend"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "jsdom": "^26.1.0",
+    "vitest": "^3.2.4"
   }
 }

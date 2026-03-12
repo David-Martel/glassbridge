@@ -1,5 +1,12 @@
 import "./styles.css";
 
+declare global {
+  interface Window {
+    __PIXEL_API_ORIGIN__?: string;
+    __PIXEL_WS_URL__?: string;
+  }
+}
+
 type ToolStatus = {
   vendorRoot: string;
   adb: { installed: boolean; path: string | null; version: string | null };
@@ -32,8 +39,10 @@ type ApprovedDevice = {
   lastSeenAt: string;
 };
 
-const apiRoot = "";
-const wsUrl = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
+const apiRoot = window.__PIXEL_API_ORIGIN__ ?? "";
+const wsUrl =
+  window.__PIXEL_WS_URL__ ??
+  `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
 const app = document.querySelector<HTMLDivElement>("#app");
 
 if (!app) {
