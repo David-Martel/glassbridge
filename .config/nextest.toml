@@ -1,0 +1,13 @@
+[profile.default]
+failure-output = "immediate-final"
+status-level = "pass"
+final-status-level = "slow"
+fail-fast = false
+retries = { count = 1, backoff = "fixed", delay = "2s" }
+
+[profile.ci]
+failure-output = "final"
+status-level = "skip"
+final-status-level = "slow"
+fail-fast = false
+retries = 0

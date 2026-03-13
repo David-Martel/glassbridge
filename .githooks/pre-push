@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+
+pwsh -ExecutionPolicy Bypass -File "$(dirname "$0")/../tools/pre-push.ps1"
