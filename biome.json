@@ -15,6 +15,8 @@
       "**",
       "!vendor",
       "!data",
+      "!output",
+      "!staging",
       "!apps/server/dist",
       "!apps/web/dist",
       "!apps/web/src-tauri/gen",

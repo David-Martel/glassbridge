@@ -1,9 +1,13 @@
 node_modules/
 dist/
 apps/*/dist/
+.cargo/config.toml
 apps/web/src-tauri/target/
 apps/web/src-tauri/gen/
 output/
+staging/desktop/*.exe
+staging/desktop/*.pdb
+staging/desktop/*.json
 vendor/platform-tools/
 vendor/scrcpy/
 vendor/cache/
@@ -11,4 +15,8 @@ vendor/tool-manifest.json
 data/*.db
 data/*.db-shm
 data/*.db-wal
+.gitleaks-report.json
+.gitleaksignore
+.secrets.baseline
+.jules/
 *.log

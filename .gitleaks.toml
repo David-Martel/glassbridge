@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow generated lockfiles and tokenizer package names that trigger false positives."
+paths = [
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)apps/web/src-tauri/Cargo\.lock$'''
+]
