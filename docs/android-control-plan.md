@@ -1,4 +1,4 @@
-# Android Control Framework Plan
+# GlassBridge Product Plan
 
 ## Goals
 
@@ -16,7 +16,7 @@ Build a reusable local framework for communicating with Android phones with:
 2. Expose a reusable Node/TypeScript control layer for `adb` and external tool launch.
 3. Add a Fastify API for device inventory, quick controls, shell access, and app actions.
 4. Add a browser UI with operations-focused panels and built-in guidance.
-5. Add a device-facing test suite for the connected Pixel 10 XL.
+5. Add a device-facing test suite for the connected Pixel 10 Pro XL.
 6. Verify the local install path with dependency install, binary bootstrap, build, and tests.
 7. Persist approved devices locally so multi-device sessions can be reused without re-discovery friction.
 
