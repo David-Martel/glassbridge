@@ -1100,6 +1100,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "glassbridge_desktop"
+version = "0.1.0"
+dependencies = [
+ "reqwest 0.12.28",
+ "serde",
+ "tauri",
+ "tauri-build",
+]
+
+[[package]]
 name = "glib"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2337,16 +2347,6 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
-
-[[package]]
-name = "pixel_android_control_desktop"
-version = "0.1.0"
-dependencies = [
- "reqwest 0.12.28",
- "serde",
- "tauri",
- "tauri-build",
-]
 
 [[package]]
 name = "pkg-config"

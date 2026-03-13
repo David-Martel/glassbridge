@@ -1,0 +1,12 @@
+# Copy this template to `.cargo/config.toml` if you are not using the automated
+# CargoTools bootstrap in `Launch-PixelDesktop.ps1`.
+#
+# On this machine, CargoTools generates `.cargo/config.toml` dynamically so the
+# local linker and cache settings match the installed MSVC and Cargo environment.
+[build]
+rustc-wrapper = "sccache"
+target-dir = "target"
+
+[env]
+RUSTC_WRAPPER = "sccache"
+CARGO_INCREMENTAL = "0"

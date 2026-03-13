@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Pixel Android Control",
+  "productName": "GlassBridge",
   "version": "0.1.0",
-  "identifier": "com.davidmartel.pixelandroidcontrol",
+  "identifier": "io.github.davidmartel.glassbridge",
   "build": {
     "beforeBuildCommand": "npm run build",
     "beforeDevCommand": "npm run dev -- --host 127.0.0.1 --strictPort",
@@ -15,7 +15,7 @@
     },
     "windows": [
       {
-        "title": "Pixel Android Control",
+        "title": "GlassBridge",
         "width": 1540,
         "height": 980,
         "minWidth": 1180,

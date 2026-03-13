@@ -41,6 +41,8 @@ if (!app) {
   throw new Error("Missing #app root");
 }
 
+const appRoot = app;
+
 const state = {
   tools: null as ToolStatus | null,
   devices: [] as DeviceRecord[],
@@ -51,6 +53,7 @@ const state = {
   screenCaptureUrl: "",
   screenCaptureLoading: false,
   screenAutoRefresh: false,
+  screenScalePercent: 60,
   screenWidth: 0,
   screenHeight: 0,
   screenOrientation: "unknown" as ScreenOrientation,
@@ -239,7 +242,7 @@ function render() {
   const selected =
     state.devices.find((device) => device.serial === state.selectedSerial) ??
     null;
-  app.innerHTML = `
+  appRoot.innerHTML = `
     <div class="shell">
       ${
         state.runtimeError
@@ -340,17 +343,22 @@ function render() {
                 <input type="checkbox" data-action="screen-auto-refresh" ${state.screenAutoRefresh ? "checked" : ""} ${selected ? "" : "disabled"} />
                 <span>Auto refresh</span>
               </label>
+              <label class="screen-scale-control">
+                <span>Desktop scale ${state.screenScalePercent}%</span>
+                <input type="range" min="35" max="100" step="5" value="${state.screenScalePercent}" data-action="screen-scale" ${selected ? "" : "disabled"} />
+              </label>
             </div>
             ${
               state.screenCaptureUrl
                 ? `
                   <div class="screen-panel screen-panel-${state.screenOrientation}">
-                    <div class="screen-frame screen-frame-${state.screenOrientation}">
+                    <div class="screen-frame screen-frame-${state.screenOrientation}" style="max-width:${resolvePreviewWidth()}px">
                       <img
                         src="${state.screenCaptureUrl}"
                         alt="Device screen preview"
                         class="screen-preview screen-preview-${state.screenOrientation}"
                         data-screen-preview
+                        style="max-width:${resolvePreviewWidth()}px"
                         draggable="false"
                       />
                     </div>
@@ -366,6 +374,10 @@ function render() {
                       <div class="screen-stat">
                         <span>Layout mode</span>
                         <strong>${state.screenOrientation === "landscape" ? "Wide dock" : "Vertical dock"}</strong>
+                      </div>
+                      <div class="screen-stat">
+                        <span>Desktop scale target</span>
+                        <strong>${state.screenScalePercent}% of native width</strong>
                       </div>
                       <p class="hint">${renderScreenHint()}</p>
                     </div>
@@ -619,6 +631,16 @@ function bindEvents() {
     };
   }
 
+  const screenScale = document.querySelector<HTMLInputElement>(
+    "[data-action='screen-scale']",
+  );
+  if (screenScale) {
+    screenScale.oninput = () => {
+      state.screenScalePercent = Number(screenScale.value);
+      render();
+    };
+  }
+
   const screenPreview = document.querySelector<HTMLImageElement>(
     "[data-screen-preview]",
   );
@@ -775,11 +797,11 @@ function renderScreenSummary() {
 
 function renderScreenHint() {
   if (state.screenOrientation === "landscape") {
-    return "Landscape previews widen automatically so the phone surface stays unobstructed and diagnostics shift to the side.";
+    return "Landscape previews widen automatically, while tap translation still maps desktop coordinates back to the full device resolution.";
   }
 
   if (state.screenOrientation === "portrait") {
-    return "Portrait previews keep the device centered with guidance stacked underneath for one-handed tapping and reading.";
+    return "Portrait previews stay centered and can be rescaled for readability without losing device-pixel accuracy.";
   }
 
   return "Tap directly on the preview to send scaled input. Use scrcpy for continuous low-latency interaction.";
@@ -796,6 +818,23 @@ function formatScreenOrientation(orientation: ScreenOrientation) {
     return "Square";
   }
   return "Unknown";
+}
+
+function resolvePreviewWidth() {
+  if (!state.screenWidth) {
+    return 420;
+  }
+
+  const scaledWidth = Math.round(
+    state.screenWidth * (state.screenScalePercent / 100),
+  );
+  const minimum = state.screenOrientation === "landscape" ? 420 : 280;
+  const maximum = state.screenOrientation === "landscape" ? 1080 : 640;
+  return clamp(scaledWidth, minimum, maximum);
+}
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(Math.max(value, minimum), maximum);
 }
 
 function renderChip(label: string, ready: boolean, version: string) {
