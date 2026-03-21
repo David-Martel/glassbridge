@@ -13,21 +13,17 @@
       "file": "glassbridge-context-20260321-phase1.md",
       "created": "2026-03-21T15:01:00Z",
       "project": "glassbridge",
-      "agents_involved": [
-        "research-agent",
-        "cicd-agent",
-        "scrcpy-research-agent",
-        "test-infra-agent",
-        "cicd-impl-agent",
-        "security-agent",
-        "code-reviewer",
-        "rust-server-agent",
-        "rust-registry-agent",
-        "rust-adb-agent",
-        "rust-fixer-agent"
-      ],
-      "summary": "Phase 0 + Phase 1: CI/CD hardening, build tooling (build.ps1 + justfile), and native Rust server migration replacing Node.js Fastify backend with embedded Axum. 170 tests, clippy clean."
+      "agents_involved": ["research-agent", "cicd-agent", "scrcpy-research-agent", "test-infra-agent", "cicd-impl-agent", "security-agent", "code-reviewer", "rust-server-agent", "rust-registry-agent", "rust-adb-agent", "rust-fixer-agent"],
+      "summary": "Phase 0 + Phase 1: CI/CD hardening, build tooling, native Rust server migration. 170 tests."
+    },
+    {
+      "id": "ctx-glassbridge-20260321-integration",
+      "file": "glassbridge-context-20260321-integration.md",
+      "created": "2026-03-21T18:10:00Z",
+      "project": "glassbridge",
+      "agents_involved": ["adb-native-agent", "scrcpy-agent", "tools-agent", "integration-agent", "rust-fixer-agent", "rust-wiring-agent", "frontend-agent", "build-pipeline-agent"],
+      "summary": "Phases 2-5 + full integration: 16 Rust modules wired front-to-back-to-device. 473 tests, 9.5MB binary, HIL verified with Pixel 10 Pro XL."
     }
   ],
-  "latest": "ctx-glassbridge-20260321-phase1"
+  "latest": "ctx-glassbridge-20260321-integration"
 }
