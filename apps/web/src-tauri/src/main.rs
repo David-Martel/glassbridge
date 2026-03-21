@@ -1,16 +1,32 @@
+// GlassBridge Desktop — Tauri v2 shell with embedded Rust server
+//
+// The Axum HTTP/WebSocket server runs in-process, eliminating the Node.js
+// child process spawn that was previously required.  The Node.js backend at
+// apps/server/ is now legacy and used only for browser-mode development
+// (`npm run dev`).
+//
+// DEPRECATED: The previous architecture spawned `node dist/index.js` as a
+// child process and polled /api/health for up to 20 seconds.  That code has
+// been removed in favour of the embedded server below.
+
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod adb;
+mod adb_mock;
+mod config;
+mod help;
+mod registry;
+mod server;
+mod tooling;
 
 use serde::Serialize;
 use std::{
     fs,
-    net::TcpListener,
+    net::{SocketAddr, TcpListener},
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
     sync::Mutex,
-    thread,
-    time::{Duration, Instant},
 };
-use tauri::{Manager, State};
+use tauri::State;
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -25,7 +41,6 @@ struct DesktopState {
 }
 
 struct DesktopRuntime {
-    process: Option<Child>,
     api_origin: String,
     ws_url: String,
     launch_target: String,
@@ -46,7 +61,14 @@ fn desktop_bootstrap(state: State<'_, DesktopState>) -> Result<DesktopBootstrapP
 }
 
 fn main() {
-    let state = DesktopState::launch().unwrap_or_else(|error| {
+    // Build a multi-threaded Tokio runtime for the embedded Axum server.
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("failed to create Tokio runtime");
+
+    let _guard = rt.enter();
+    let state = launch_embedded_server().unwrap_or_else(|error| {
         panic!("desktop bootstrap failed: {error}");
     });
 
@@ -54,78 +76,58 @@ fn main() {
         .manage(state)
         .invoke_handler(tauri::generate_handler![desktop_bootstrap])
         .build(tauri::generate_context!())
-        .expect("error while building tauri application");
+        .expect("error while building Tauri application");
 
-    app.run(|app_handle, event| {
-        if matches!(
-            event,
-            tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
-        ) {
-            if let Some(state) = app_handle.try_state::<DesktopState>() {
-                state.shutdown();
-            }
-        }
+    app.run(|_app_handle, _event| {
+        // No shutdown handler needed — the Axum server lives in a Tokio task
+        // that terminates when the process exits.  No child processes to kill.
     });
 }
 
-impl DesktopState {
-    fn launch() -> Result<Self, String> {
-        let repo_root = repo_root()?;
-        let backend_entry = repo_root.join("apps").join("server").join("dist").join("index.js");
-        if !backend_entry.exists() {
-            return Err(format!(
-                "Missing backend bundle at {}. Run the desktop launcher after building the server.",
-                backend_entry.display()
-            ));
+/// Start the embedded Axum server on a dynamically reserved port.
+///
+/// Returns a [`DesktopState`] with the resolved URLs.  The server runs in a
+/// background Tokio task — there is no Node.js process and no health-check
+/// polling.
+fn launch_embedded_server() -> Result<DesktopState, String> {
+    let repo_root = repo_root()?;
+    let cfg = config::Config::from_env(&repo_root);
+
+    // Ensure data directory exists for SQLite registry.
+    fs::create_dir_all(&cfg.data_root).map_err(|e| {
+        format!(
+            "Failed to create data root {}: {e}",
+            cfg.data_root.display()
+        )
+    })?;
+
+    // Reserve a port for the embedded server.
+    let port = reserve_port()?;
+    let addr: SocketAddr = ([127, 0, 0, 1], port).into();
+    let api_origin = format!("http://127.0.0.1:{port}");
+    let ws_url = format!("ws://127.0.0.1:{port}/ws");
+
+    // Build the application state (opens SQLite, creates ADB backend).
+    let app_state =
+        server::AppState::new(cfg.vendor_root.clone(), &cfg.data_root, repo_root.clone())
+            .map_err(|e| format!("Failed to initialise app state: {e}"))?;
+
+    // Spawn the Axum server in a background task.  It runs until the process
+    // exits — no graceful shutdown needed because there are no child processes
+    // to reap.
+    tokio::spawn(async move {
+        if let Err(e) = server::serve(app_state, addr).await {
+            eprintln!("Embedded server error: {e}");
         }
+    });
 
-        let port = reserve_port()?;
-        let api_origin = format!("http://127.0.0.1:{port}");
-        let ws_url = format!("ws://127.0.0.1:{port}/ws");
-        let data_root = repo_root.join("data");
-        fs::create_dir_all(&data_root).map_err(|error| {
-            format!(
-                "Failed to create desktop data root {}: {error}",
-                data_root.display()
-            )
-        })?;
-
-        let mut command = Command::new(std::env::var("PIXEL_NODE_PATH").unwrap_or_else(|_| "node".into()));
-        command
-            .current_dir(&repo_root)
-            .arg(&backend_entry)
-            .env("HOST", "127.0.0.1")
-            .env("PORT", port.to_string())
-            .env("ANDROID_CONTROL_DATA_ROOT", &data_root)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-
-        let child = command
-            .spawn()
-            .map_err(|error| format!("Failed to launch backend server: {error}"))?;
-
-        wait_for_health(&api_origin)?;
-
-        Ok(Self {
-            runtime: Mutex::new(DesktopRuntime {
-                process: Some(child),
-                api_origin: api_origin.clone(),
-                ws_url,
-                launch_target: api_origin,
-            }),
-        })
-    }
-
-    fn shutdown(&self) {
-        if let Ok(mut runtime) = self.runtime.lock() {
-            if let Some(child) = runtime.process.as_mut() {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-            runtime.process = None;
-        }
-    }
+    Ok(DesktopState {
+        runtime: Mutex::new(DesktopRuntime {
+            api_origin: api_origin.clone(),
+            ws_url,
+            launch_target: api_origin,
+        }),
+    })
 }
 
 fn repo_root() -> Result<PathBuf, String> {
@@ -134,35 +136,16 @@ fn repo_root() -> Result<PathBuf, String> {
         .join("..")
         .join("..")
         .canonicalize()
-        .map_err(|error| format!("Failed to resolve repository root: {error}"))
+        .map_err(|e| format!("Failed to resolve repository root: {e}"))
 }
 
 fn reserve_port() -> Result<u16, String> {
     let listener = TcpListener::bind("127.0.0.1:0")
-        .map_err(|error| format!("Failed to reserve a localhost port: {error}"))?;
+        .map_err(|e| format!("Failed to reserve a localhost port: {e}"))?;
     let port = listener
         .local_addr()
-        .map_err(|error| format!("Failed to read reserved localhost port: {error}"))?
+        .map_err(|e| format!("Failed to read reserved port: {e}"))?
         .port();
     drop(listener);
     Ok(port)
-}
-
-fn wait_for_health(api_origin: &str) -> Result<(), String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-        .map_err(|error| format!("Failed to create backend health client: {error}"))?;
-    let deadline = Instant::now() + Duration::from_secs(20);
-
-    while Instant::now() < deadline {
-      match client.get(format!("{api_origin}/api/health")).send() {
-          Ok(response) if response.status().is_success() => return Ok(()),
-          _ => thread::sleep(Duration::from_millis(250)),
-      }
-    }
-
-    Err(format!(
-        "The backend server did not become healthy at {api_origin} within 20 seconds."
-    ))
 }

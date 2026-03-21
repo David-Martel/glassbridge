@@ -1,3 +1,5 @@
+// @deprecated — Replaced by apps/web/src-tauri/src/adb.rs (native Rust ADB module).
+// Retained for browser-mode development only (`npm run dev`).
 import { spawn } from "node:child_process";
 import { repoRoot } from "./config.js";
 import {

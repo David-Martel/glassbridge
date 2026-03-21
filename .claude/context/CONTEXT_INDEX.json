@@ -1,0 +1,26 @@
+{
+  "contexts": [
+    {
+      "id": "ctx-glassbridge-20260321",
+      "file": "glassbridge-context-20260321.md",
+      "created": "2026-03-21T12:49:00Z",
+      "project": "glassbridge",
+      "agents_involved": [],
+      "summary": "Git sync session: merged dependabot PRs, merged release branch, rebased across dual remotes, cleaned up branches/PRs, created CLAUDE.md"
+    },
+    {
+      "id": "ctx-glassbridge-20260321-phase1",
+      "file": "glassbridge-context-20260321-phase1.md",
+      "created": "2026-03-21T15:01:00Z",
+      "project": "glassbridge",
+      "agents_involved": [
+        "research-agent", "cicd-agent", "scrcpy-research-agent",
+        "test-infra-agent", "cicd-impl-agent", "security-agent",
+        "code-reviewer", "rust-server-agent", "rust-registry-agent",
+        "rust-adb-agent", "rust-fixer-agent"
+      ],
+      "summary": "Phase 0 + Phase 1: CI/CD hardening, build tooling (build.ps1 + justfile), and native Rust server migration replacing Node.js Fastify backend with embedded Axum. 170 tests, clippy clean."
+    }
+  ],
+  "latest": "ctx-glassbridge-20260321-phase1"
+}

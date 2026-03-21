@@ -1,3 +1,5 @@
+// @deprecated — Replaced by apps/web/src-tauri/src/tooling.rs (native Rust tooling module).
+// Retained for browser-mode development only (`npm run dev`).
 import { spawn } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";

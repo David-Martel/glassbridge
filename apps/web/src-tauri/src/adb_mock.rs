@@ -1,4 +1,5 @@
 // adb_mock.rs — mock ADB response fixtures for Rust integration tests.
+#![allow(dead_code)]
 //
 // When the native Rust backend lands it will shell out to `adb`.  These
 // fixtures let tests verify parsing and routing logic without a real device.
@@ -35,8 +36,8 @@ pub const SCREENSHOT_PNG_BYTES: &[u8] = &[
     0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // width=1, height=1
     0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c, 0x02, // bit depth, color type, etc.
     0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, // IDAT length + type
-    0x78, 0xda, 0x63, 0xfc, 0xff, 0x1f, 0x00, 0x03, 0x03, 0x02, 0x00,
-    0xef, 0x4f, 0xc5, 0xd3, // IDAT CRC
+    0x78, 0xda, 0x63, 0xfc, 0xff, 0x1f, 0x00, 0x03, 0x03, 0x02, 0x00, 0xef, 0x4f, 0xc5,
+    0xd3, // IDAT CRC
     0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82, // IEND
 ];
 
@@ -47,14 +48,16 @@ pub const SCREENSHOT_PNG_BYTES: &[u8] = &[
 mod tests {
     use super::*;
 
+    type DeviceMeta = (String, String, Vec<(String, String)>);
+
     /// Parse a line from `adb devices -l` into (serial, state, metadata pairs).
-    fn parse_device_line(line: &str) -> Option<(String, String, Vec<(String, String)>)> {
+    fn parse_device_line(line: &str) -> Option<DeviceMeta> {
         let parts: Vec<&str> = line.splitn(2, '\t').collect();
         if parts.len() < 2 {
             return None;
         }
         let serial = parts[0].trim().to_string();
-        let rest: Vec<&str> = parts[1].trim().split_whitespace().collect();
+        let rest: Vec<&str> = parts[1].split_whitespace().collect();
         if rest.is_empty() {
             return None;
         }
@@ -73,7 +76,7 @@ mod tests {
         Some((serial, state, meta))
     }
 
-    fn authorized_devices(output: &str) -> Vec<(String, String, Vec<(String, String)>)> {
+    fn authorized_devices(output: &str) -> Vec<DeviceMeta> {
         output
             .lines()
             .skip(1) // skip "List of devices attached"

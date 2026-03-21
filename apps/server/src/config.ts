@@ -1,3 +1,5 @@
+// @deprecated — Replaced by apps/web/src-tauri/src/config.rs (native Rust config module).
+// Retained for browser-mode development only (`npm run dev`).
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 

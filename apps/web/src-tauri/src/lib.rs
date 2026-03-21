@@ -6,6 +6,14 @@
 // the library target below has no such restriction and is always reachable by
 // `cargo test`.
 
+pub mod adb;
+pub mod adb_mock;
+pub mod config;
+pub mod help;
+pub mod registry;
+pub mod server;
+pub mod tooling;
+
 pub mod desktop {
     use std::{
         net::TcpListener,

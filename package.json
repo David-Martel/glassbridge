@@ -37,7 +37,7 @@
     "test:unit": "vitest run tests/frontend-ui.test.ts",
     "test:integration": "npm run build --workspace apps/server && vitest run tests/frontend-backend.integration.test.ts",
     "test:device": "npm run build --workspace apps/server && node --test tests/device-smoke.test.mjs",
-    "test:device:ci": "npm run build --workspace apps/server && GLASSBRIDGE_REQUIRE_DEVICE=1 node --test tests/device-smoke.test.mjs",
+    "test:device:ci": "npm run build --workspace apps/server && node -e \"process.env.GLASSBRIDGE_REQUIRE_DEVICE='1';require('child_process').execFileSync(process.execPath,['--test','tests/device-smoke.test.mjs'],{stdio:'inherit'})\"",
     "test:desktop": "npm run build --workspace apps/server && npm run desktop:check && npm run desktop:build",
     "test:e2e": "npm run build && node tests/playwright-live.mjs",
     "test:e2e:headed": "npm run build && node tests/playwright-live-headed.mjs",

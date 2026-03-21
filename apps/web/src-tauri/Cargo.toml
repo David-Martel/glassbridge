@@ -20,12 +20,38 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
-serde = { version = "1", features = ["derive"] }
+# Tauri framework
 tauri = { version = "2", features = [] }
 
+# HTTP server (embedded Axum replaces Node.js Fastify backend)
+axum = { version = "0.8", features = ["ws", "macros"] }
+axum-extra = { version = "0.10", features = ["typed-header"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# SQLite registry (replaces node:sqlite DatabaseSync)
+rusqlite = { version = "0.34", features = ["bundled"] }
+
+# HTTP client (for health checks, future use)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+thiserror = "2"
+async-trait = "0.1"
+
 [dev-dependencies]
-# No extra dev deps needed yet; add criterion here when benchmarks land.
+# Temporary directories for tooling path-resolution tests.
+tempfile = "3"
+# `tower::util::ServiceExt` used in server.rs tests for `router.oneshot(req)`.
+tower = { version = "0.5", features = ["util"] }
 
 [profile.release]
 codegen-units = 1

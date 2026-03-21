@@ -1,3 +1,5 @@
+// @deprecated — Replaced by apps/web/src-tauri/src/help.rs (native Rust help module).
+// Retained for browser-mode development only (`npm run dev`).
 export const helpTopics = [
   {
     id: "connect",

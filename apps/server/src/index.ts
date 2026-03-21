@@ -1,3 +1,7 @@
+// @deprecated — This Node.js/Fastify backend is now LEGACY.  The desktop shell
+// uses the embedded Rust Axum server at apps/web/src-tauri/src/server.rs.
+// This file is retained for browser-mode development only (`npm run dev`).
+// See TODO.md Phase 1 for migration details.
 import { access } from "node:fs/promises";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";

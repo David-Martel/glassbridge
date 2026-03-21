@@ -1,3 +1,5 @@
+// @deprecated — Replaced by apps/web/src-tauri/src/registry.rs (native Rust SQLite registry).
+// Retained for browser-mode development only (`npm run dev`).
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";

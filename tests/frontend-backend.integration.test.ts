@@ -95,6 +95,7 @@ beforeEach(async () => {
     : null;
 
   const livePayloads = new Map<string, unknown>([
+    ["/api/health", { ok: true }],
     ["/api/tools/status", tools],
     ["/api/devices", devices],
     ["/api/help/topics", help],

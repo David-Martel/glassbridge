@@ -6,8 +6,12 @@
 #   1. Secret scan on full repo
 #   2. Biome lint
 #   3. TypeScript typecheck
-#   4. Unit tests (vitest, no device)
-#   5. Desktop check (Rust clippy + fmt + debug build)
+#   4. Build (server + web)
+#   5. Unit tests (vitest, no device)
+#   6. Integration tests (vitest + real backend)
+#   7. Rust fmt check
+#   8. Rust clippy
+#   9. Desktop check (Rust debug build)
 #
 # Device-dependent tests are NOT run here — they require a connected Android
 # device and will fail in environments without hardware attached.
@@ -22,23 +26,39 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 
 Push-Location $repoRoot
 try {
-  Write-Host "==> [1/5] Secret scan (full repo)..." -ForegroundColor Cyan
+  Write-Host "==> [1/9] Secret scan (full repo)..." -ForegroundColor Cyan
   npm run secrets:repo
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  Write-Host "==> [2/5] Lint (biome)..." -ForegroundColor Cyan
+  Write-Host "==> [2/9] Lint (biome)..." -ForegroundColor Cyan
   npm run lint
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  Write-Host "==> [3/5] Typecheck..." -ForegroundColor Cyan
+  Write-Host "==> [3/9] Typecheck..." -ForegroundColor Cyan
   npm run typecheck
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  Write-Host "==> [4/5] Unit tests..." -ForegroundColor Cyan
+  Write-Host "==> [4/9] Build (server + web)..." -ForegroundColor Cyan
+  npm run build
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  Write-Host "==> [5/9] Unit tests..." -ForegroundColor Cyan
   npm run test:unit
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  Write-Host "==> [5/5] Desktop check (Rust clippy + fmt + debug build)..." -ForegroundColor Cyan
+  Write-Host "==> [6/9] Integration tests..." -ForegroundColor Cyan
+  npm run test:integration
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  Write-Host "==> [7/9] Rust format check..." -ForegroundColor Cyan
+  npm run rust:fmt:check
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  Write-Host "==> [8/9] Rust clippy..." -ForegroundColor Cyan
+  npm run rust:check
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  Write-Host "==> [9/9] Desktop check (Rust debug build)..." -ForegroundColor Cyan
   npm run desktop:check
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
