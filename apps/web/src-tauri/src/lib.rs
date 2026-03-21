@@ -29,6 +29,7 @@ pub mod renderer;
 pub mod scrcpy_protocol;
 pub mod server;
 pub mod telemetry;
+pub mod terminal;
 pub mod tooling;
 pub mod wifi_adb;
 

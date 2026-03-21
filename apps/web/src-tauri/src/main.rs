@@ -28,6 +28,7 @@ mod property_cache;
 mod registry;
 mod server;
 mod telemetry;
+mod terminal;
 mod tooling;
 mod wifi_adb;
 

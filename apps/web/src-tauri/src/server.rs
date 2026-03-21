@@ -438,6 +438,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/wifi/devices", get(wifi_devices_handler))
         // WebSocket snapshot feed
         .route("/ws", get(ws_handler))
+        // WebSocket interactive terminal (per-device, per-connection session)
+        .route(
+            "/ws/terminal/{serial}",
+            get(crate::terminal::terminal_ws_handler),
+        )
         .layer(CorsLayer::permissive())
         .with_state(state)
 }

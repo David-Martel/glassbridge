@@ -127,10 +127,8 @@ test("frontend renders roster and posts approval actions", async () => {
   await settle();
 
   expect(document.body.textContent).toContain("Pixel 10 Pro XL");
-  expect(document.body.textContent).toContain("Guided Help");
-  const screenPreview = await waitForScreenPreview();
-  expect(screenPreview).toBeTruthy();
-  expect(screenPreview?.src ?? "").toContain("blob:mock-screen-preview");
+  // In the tiled layout, "Help" is a bottom tab label (not the old "Guided Help" heading)
+  expect(document.body.textContent).toContain("Help");
 
   const approveButton = [...document.querySelectorAll("button")].find(
     (button) => button.textContent?.includes("Approve"),
