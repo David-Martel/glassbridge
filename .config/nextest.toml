@@ -1,13 +1,37 @@
+# nextest.toml — cargo-nextest configuration for GlassBridge Rust tests
+#
+# Install nextest:  cargo install cargo-nextest --locked
+# Run all tests:    cargo nextest run
+# Run CI profile:   cargo nextest run --profile ci
+
 [profile.default]
 failure-output = "immediate-final"
 status-level = "pass"
 final-status-level = "slow"
 fail-fast = false
+# Allow one retry for flaky tests on dev machines (network/port races).
 retries = { count = 1, backoff = "fixed", delay = "2s" }
 
 [profile.ci]
+# In CI we want to see failures immediately without waiting for the full run.
 failure-output = "final"
 status-level = "skip"
 final-status-level = "slow"
 fail-fast = false
+# No retries in CI — flaky tests must be fixed.
+retries = 0
+
+# Device tests are excluded from both profiles above.
+# Run them explicitly:  cargo nextest run --profile device
+[profile.device]
+failure-output = "immediate-final"
+status-level = "pass"
+final-status-level = "slow"
+fail-fast = true          # Stop on first device failure — device may be in bad state
+retries = 0
+
+[[profile.device.overrides]]
+# Tag device-dependent tests with #[cfg_attr(not(feature = "device-tests"), ignore)]
+# or with a custom test filter expression.
+filter = 'test(device)'
 retries = 0

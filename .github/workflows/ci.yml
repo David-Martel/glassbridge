@@ -1,19 +1,24 @@
 name: CI
 
+# Runs on every push/PR. No device hardware required.
+# Device tests live in device-test.yml (manual or label-triggered).
+
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "release/**"]
   pull_request:
 
 jobs:
+  # -------------------------------------------------------------------------
+  # 1. Secret scanning — runs first, cheapest gate
+  # -------------------------------------------------------------------------
   secret-scan:
+    name: Secret Scan (gitleaks)
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0          # Full history required by gitleaks
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
@@ -21,58 +26,185 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
 
-  validate:
+  # -------------------------------------------------------------------------
+  # 2. TypeScript / Node.js validation — Ubuntu (canonical)
+  # -------------------------------------------------------------------------
+  lint-and-test:
+    name: Lint + Typecheck + Unit Tests (Ubuntu)
     runs-on: ubuntu-latest
+    needs: secret-scan
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
 
-      - name: Install
+      - name: Install dependencies
         run: npm ci
 
-      - name: Lint
+      - name: Lint (biome)
         run: npm run lint
 
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Repeatable Tests
+      # test:ci = build + test:unit (no device, no integration backend required)
+      - name: Build + unit tests
         run: npm run test:ci
 
-  desktop-shell:
-    runs-on: windows-latest
+  # -------------------------------------------------------------------------
+  # 3. Rust checks — Ubuntu (fast, no MSVC required for lint/fmt/test)
+  # -------------------------------------------------------------------------
+  rust-checks:
+    name: Rust Checks (fmt + clippy + test)
+    runs-on: ubuntu-latest
+    needs: secret-scan
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Rust (stable + clippy + rustfmt)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # Cache the Cargo registry and compiled artifacts to speed up repeat runs.
+      # Key rolls on Cargo.lock so a dependency bump always gets a clean cache.
+      - name: Cache Cargo registry + git db
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: Cache Cargo target dir
+        uses: actions/cache@v4
+        with:
+          path: apps/web/src-tauri/target
+          key: cargo-target-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-
+
+      # fmt check must come before clippy so formatting noise does not obscure
+      # real warnings. RUSTC_WRAPPER is cleared — sccache is not needed here.
+      - name: Rust fmt check
+        working-directory: apps/web/src-tauri
+        run: cargo fmt --all --check
+
+      - name: Rust clippy
+        working-directory: apps/web/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      # cargo test exits 0 with "no tests" when none are defined, so this is
+      # always safe to run regardless of whether Rust tests exist yet.
+      - name: Rust tests
+        working-directory: apps/web/src-tauri
+        run: cargo test
+
+  # -------------------------------------------------------------------------
+  # 4. Desktop / Rust full build — Windows only (Tauri requires MSVC toolchain)
+  # -------------------------------------------------------------------------
+  desktop-shell:
+    name: Desktop Check (Windows + Rust)
+    runs-on: windows-latest
+    needs: secret-scan
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      # sccache speeds subsequent Rust compilations significantly.
+      # Cache key rolls on Cargo.lock changes.
+      - name: Cache sccache store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\Mozilla\sccache
+            C:\Users\runneradmin\AppData\Local\Mozilla\sccache
+          key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            sccache-${{ runner.os }}-
 
-      - name: Install
+      - name: Cache Cargo registry + git db
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\.cargo\registry
+            ~\.cargo\git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: Setup Rust (stable + components)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install sccache
+        # Only install if not already cached; fall back gracefully if it fails.
+        run: |
+          if (-not (Get-Command sccache -ErrorAction SilentlyContinue)) {
+            cargo install sccache --locked
+          }
+        shell: pwsh
+
+      - name: Install dependencies
         run: npm ci
 
-      - name: Desktop Check
-        run: npm run desktop:check
+      # Build + unit tests (test:ci) — confirms the web/server build is healthy
+      # on the Windows runner before the expensive Tauri compile step.
+      - name: Build + unit tests
+        run: npm run test:ci
 
-      - name: Upload Desktop Artifact
+      - name: Desktop check build (debug, fast)
+        run: npm run desktop:check
+        env:
+          RUSTC_WRAPPER: sccache
+
+      - name: Upload desktop check artifact
         uses: actions/upload-artifact@v4
         with:
-          name: glassbridge-desktop-check
+          name: glassbridge-desktop-check-${{ github.sha }}
+          retention-days: 7
           path: |
             staging/desktop/glassbridge_desktop.exe
             staging/desktop/glassbridge_desktop.pdb
             staging/desktop/glassbridge_desktop.exe.buildinfo.json
+
+  # -------------------------------------------------------------------------
+  # 5. Windows Node.js parity — confirm the test suite passes on Windows too
+  # -------------------------------------------------------------------------
+  validate-windows:
+    name: Lint + Typecheck + Unit Tests (Windows)
+    runs-on: windows-latest
+    needs: secret-scan
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (biome)
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build + unit tests
+        run: npm run test:ci

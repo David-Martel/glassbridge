@@ -1,5 +1,8 @@
 name: Release Desktop Artifact
 
+# Triggered by semver tags (v*) or manually.
+# Produces a signed, optimised release binary and attaches it to the GitHub Release.
+
 on:
   push:
     tags:
@@ -8,32 +11,95 @@ on:
 
 jobs:
   desktop-release:
+    name: Build Desktop Release (Windows)
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Cache sccache store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\Mozilla\sccache
+            C:\Users\runneradmin\AppData\Local\Mozilla\sccache
+          key: sccache-release-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            sccache-release-${{ runner.os }}-
+            sccache-${{ runner.os }}-
 
-      - name: Install
+      - name: Cache Cargo registry + git db
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\.cargo\registry
+            ~\.cargo\git
+          key: cargo-registry-release-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-release-${{ runner.os }}-
+            cargo-registry-${{ runner.os }}-
+
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install sccache
+        run: |
+          if (-not (Get-Command sccache -ErrorAction SilentlyContinue)) {
+            cargo install sccache --locked
+          }
+        shell: pwsh
+
+      - name: Install dependencies
         run: npm ci
 
-      - name: Build Desktop Release
-        run: npm run desktop:build
+      # Run all quality gates before releasing — fast feedback, no wasted build.
+      - name: Rust fmt check
+        working-directory: apps/web/src-tauri
+        run: cargo fmt --all --check
+        env:
+          RUSTC_WRAPPER: ""
 
-      - name: Upload Desktop Artifact
+      - name: Rust clippy
+        working-directory: apps/web/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+        env:
+          RUSTC_WRAPPER: sccache
+
+      - name: Lint (biome)
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build desktop release
+        run: npm run desktop:build
+        env:
+          RUSTC_WRAPPER: sccache
+
+      - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: glassbridge-desktop
+          name: glassbridge-desktop-${{ github.ref_name }}
+          retention-days: 90
           path: |
             staging/desktop/glassbridge_desktop.exe
             staging/desktop/glassbridge_desktop.pdb
             staging/desktop/glassbridge_desktop.exe.buildinfo.json
+
+      # Attach to the GitHub Release when triggered by a tag push.
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            staging/desktop/glassbridge_desktop.exe
+            staging/desktop/glassbridge_desktop.exe.buildinfo.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -6,6 +6,16 @@ description = "Desktop shell for GlassBridge"
 license = "MIT"
 publish = false
 
+# Expose a lib target so `cargo test` can reach logic in lib.rs / adb_mock.rs
+# without launching the Tauri application.
+[lib]
+name = "glassbridge_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "glassbridge_desktop"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -14,9 +24,17 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
 
+[dev-dependencies]
+# No extra dev deps needed yet; add criterion here when benchmarks land.
+
 [profile.release]
 codegen-units = 1
 lto = "thin"
 opt-level = "s"
 panic = "abort"
 strip = "debuginfo"
+
+# Fast test builds — skip LTO and use fewer codegen units.
+[profile.test]
+opt-level = 0
+debug = true

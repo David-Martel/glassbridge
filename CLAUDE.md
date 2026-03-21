@@ -8,61 +8,97 @@ GlassBridge is a local-first Android device access framework for Windows desktop
 
 ## Build and Development Commands
 
+The recommended entry point is `just` (justfile) or `build.ps1` (PowerShell). Both
+integrate CargoTools, sccache, biome autofix, and cargo-nextest automatically.
+
 ```bash
 # Initial setup
-npm install
-npm run bootstrap:tools   # Downloads adb + scrcpy into vendor/
-npm run hooks:install      # Installs pre-commit and pre-push git hooks
+just setup                 # npm ci + bootstrap tools + install hooks + cargo binstall acceleration tools
 
-# Development (runs server + web concurrently)
-npm run dev                # Server at :3030, Web at :5173
-
-# Desktop shell (Windows only, requires Rust toolchain)
-npm run desktop            # Full desktop launch via Launch-PixelDesktop.ps1
-npm run desktop:check      # Tauri/Rust check + cargo build --release
-npm run desktop:build      # Build and stage to staging/desktop/
+# Development
+just dev                   # Server at :3030, Web at :5173 (hot reload)
+just desktop-dev           # Tauri desktop shell (dev mode)
 
 # Build
-npm run build              # Build both server and web workspaces
+just build                 # Build server + web frontend
+just build-all             # Build everything including desktop release binary
+just desktop-build         # Desktop shell only (via Launch-PixelDesktop.ps1 + CargoTools)
 
-# Lint and typecheck
-npm run lint               # Biome check (linting + formatting)
+# Lint and format
+just lint                  # Check only (biome + cargo fmt --check)
+just fix                   # Auto-fix all (biome --write + cargo fmt)
+just check                 # Full static analysis (lint + typecheck + clippy)
+
+# PowerShell alternative (build.ps1 — same capabilities)
+pwsh -File build.ps1                   # Default: lint + typecheck + clippy
+pwsh -File build.ps1 -Lint -Fix        # Auto-fix biome + cargo fmt
+pwsh -File build.ps1 -Build            # Full build including desktop
+pwsh -File build.ps1 -Test             # Deviceless tests (unit + Rust)
+pwsh -File build.ps1 -Test -Nextest    # Use cargo-nextest for Rust tests
+pwsh -File build.ps1 -Release          # Full release validation
+pwsh -File build.ps1 -Clean            # Clean all build artifacts
+```
+
+### npm scripts (still available for direct use)
+```bash
+npm run lint               # Biome check
+npm run lint:fix           # Biome autofix (--write + --unsafe)
 npm run typecheck          # TypeScript --noEmit on both workspaces
+npm run build              # Build both server and web workspaces
+npm run desktop:build      # Desktop release build via Launch-PixelDesktop.ps1
 ```
 
 ## Testing
 
 ```bash
-npm test                   # Full suite: build + frontend + backend + integration
+# Recommended (via just)
+just test                  # Fast deviceless: unit + Rust (uses nextest)
+just test-all              # Full suite: unit + Rust + device + integration
+just test-device           # Device tests only (gracefully skips if no device)
+just test-rust             # Rust tests via cargo-nextest
+just test-integration      # Frontend/backend integration
+just test-desktop          # Desktop build verification
 
-# Individual test suites
-npm run test:frontend      # vitest - DOM/UI tests (no device needed)
-npm run test:backend       # node --test - live device smoke tests (device required)
-npm run test:integration   # vitest - frontend/backend contract tests (device required)
-npm run test:desktop       # build server + cargo check + cargo build
-npm run test:ci            # build + frontend only (CI-safe, no device)
+# npm scripts
+npm run test:unit          # vitest - DOM/UI tests (no device needed)
+npm run test:device        # node --test - device smoke tests (skips gracefully)
+npm run test:integration   # vitest - frontend/backend contract (device required)
+npm run test:ci            # build + unit only (CI-safe, no device)
+npm run test:all           # full suite with graceful device skipping
+npm run test:rust          # cargo test on Tauri crate
 
-# Run a single frontend test file
+# Single test file
 npx vitest run tests/frontend-ui.test.ts
-
-# Playwright (requires device + built assets)
-npm run test:playwright:headed
 ```
 
-Frontend tests use vitest with jsdom environment. Backend tests use Node's built-in test runner. Integration tests spin up the real Fastify server and seed the frontend with live device payloads.
+Device-dependent tests use `hasDevice()` from `tests/test-helpers.mjs` to detect a connected
+Android device. Without a device, tests skip with exit code 0 (not fail). Set
+`GLASSBRIDGE_REQUIRE_DEVICE=1` to hard-fail without a device (for CI with hardware).
+
+Frontend tests use vitest with jsdom. Backend tests use Node's built-in test runner. Rust tests use cargo-nextest with profiles defined in `.config/nextest.toml` (default, ci, device).
 
 ## Validation and Security
 
 ```bash
-npm run validate:staged    # Pre-commit: secrets + lint + typecheck + frontend tests + desktop check
-npm run validate:release   # Pre-push: full secret scan + lint + typecheck + all tests + desktop
+# Recommended (via just)
+just validate-commit       # Pre-commit gate (~30s): secrets + lint + typecheck + unit
+just validate-push         # Pre-push gate (~3min): + build + integration + clippy + desktop check
+just validate-release      # Full release: + secrets history + all tests + desktop build
 
-npm run secrets:staged     # gitleaks on staged content
-npm run secrets:repo       # gitleaks on current repo
-npm run secrets:history    # gitleaks on full git history
+# Secret scanning
+just secrets-staged        # gitleaks on staged content
+just secrets-repo          # gitleaks on current repo
+just secrets-full          # gitleaks on repo + full history
 ```
 
-Git hooks (`.githooks/`) run `validate:staged` on commit and `validate:release` on push. Install with `npm run hooks:install`.
+Git hooks (`.githooks/`) run `validate:commit` on commit and `validate:push` on push. Install with `just hooks` or `npm run hooks:install`.
+
+## Build Acceleration
+
+- **sccache**: Rust compiler cache (30GB, zstd compression). Started automatically by `build.ps1` and `Launch-PixelDesktop.ps1`. Stats: `just cache-stats`.
+- **cargo-nextest**: Parallel Rust test runner with profiles in `.config/nextest.toml`. Used by `just test-rust`.
+- **cargo-binstall**: Pre-built binary installer for Rust tools. `just install-tools` installs nextest + sccache.
+- **CargoTools**: PowerShell module for managed Rust environments. Detected and used automatically by `build.ps1` and `Launch-PixelDesktop.ps1` when available.
 
 ## Architecture
 

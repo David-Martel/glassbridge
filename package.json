@@ -20,22 +20,38 @@
     "start": "npm run start --workspace apps/server",
     "bootstrap:tools": "node ./tools/bootstrap-tools.mjs",
     "verify:tools": "node ./tools/bootstrap-tools.mjs --verify",
+
     "secrets:staged": "pwsh -ExecutionPolicy Bypass -File .\\tools\\check-secrets.ps1 -Staged",
     "secrets:repo": "pwsh -ExecutionPolicy Bypass -File .\\tools\\check-secrets.ps1 -Repo",
     "secrets:history": "pwsh -ExecutionPolicy Bypass -File .\\tools\\check-secrets.ps1 -History",
+
     "typecheck": "npm run typecheck --workspace apps/server && npm run typecheck --workspace apps/web",
-    "validate:staged": "npm run secrets:staged && npm run lint && npm run typecheck && npm run test:frontend && npm run desktop:check",
-    "validate:release": "npm run secrets:repo && npm run secrets:history && npm run lint && npm run typecheck && npm test && npm run test:desktop",
-    "hooks:install": "pwsh -ExecutionPolicy Bypass -File .\\tools\\setup-git-hooks.ps1",
     "lint": "biome check .",
-    "test": "npm run build && npm run test:frontend && npm run test:backend && npm run test:integration",
-    "test:backend": "node --test tests/device-smoke.test.mjs",
-    "test:frontend": "vitest run tests/frontend-ui.test.ts",
-    "test:integration": "vitest run tests/frontend-backend.integration.test.ts",
-    "test:device": "npm run build && npm run test:backend && npm run test:integration",
+    "lint:fix": "biome check --write . && biome check --write --unsafe .",
+
+    "rust:check": "cargo clippy --manifest-path apps/web/src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "rust:fmt": "cargo fmt --manifest-path apps/web/src-tauri/Cargo.toml --all",
+    "rust:fmt:check": "cargo fmt --manifest-path apps/web/src-tauri/Cargo.toml --all --check",
+    "rust:test": "cargo test --manifest-path apps/web/src-tauri/Cargo.toml --all-features",
+
+    "test:unit": "vitest run tests/frontend-ui.test.ts",
+    "test:integration": "npm run build --workspace apps/server && vitest run tests/frontend-backend.integration.test.ts",
+    "test:device": "npm run build --workspace apps/server && node --test tests/device-smoke.test.mjs",
+    "test:device:ci": "npm run build --workspace apps/server && GLASSBRIDGE_REQUIRE_DEVICE=1 node --test tests/device-smoke.test.mjs",
     "test:desktop": "npm run build --workspace apps/server && npm run desktop:check && npm run desktop:build",
-    "test:ci": "npm run build && npm run test:frontend",
-    "test:playwright:headed": "npm run build && node tests/playwright-live-headed.mjs"
+    "test:e2e": "npm run build && node tests/playwright-live.mjs",
+    "test:e2e:headed": "npm run build && node tests/playwright-live-headed.mjs",
+    "test:rust": "npm run rust:test",
+
+    "test:ci": "npm run build && npm run test:unit",
+    "test:all": "npm run build && npm run test:unit && npm run test:integration && npm run test:device && npm run test:rust",
+
+    "validate:commit": "npm run secrets:staged && npm run lint && npm run typecheck && npm run test:unit",
+    "validate:push": "npm run secrets:repo && npm run secrets:history && npm run lint && npm run typecheck && npm run build && npm run test:unit && npm run test:integration && npm run rust:fmt:check && npm run rust:check && npm run desktop:check",
+    "validate:full": "npm run secrets:repo && npm run secrets:history && npm run lint && npm run typecheck && npm run test:all && npm run test:desktop",
+    "validate:release": "npm run validate:full",
+
+    "hooks:install": "pwsh -ExecutionPolicy Bypass -File .\\tools\\setup-git-hooks.ps1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",

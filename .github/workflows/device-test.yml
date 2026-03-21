@@ -1,0 +1,109 @@
+name: Device Tests (Hardware-in-the-Loop)
+
+# Triggered two ways:
+#   1. Manually via "Run workflow" button in GitHub UI (workflow_dispatch)
+#   2. Automatically on PRs that carry the "hardware-in-the-loop" label
+#
+# This workflow REQUIRES a self-hosted runner with an Android device attached:
+#   - Physical Android device connected via USB with USB debugging enabled
+#   - adb authorized for the device (`adb devices` must show it)
+#   - Node.js 24 + npm available on PATH
+#   - Runner registered with the label "android-device"
+#
+# Do NOT add this workflow to the standard CI pipeline. Device tests should only
+# run when hardware is explicitly available. For local device testing run:
+#   npm run test:device
+#
+# To hard-fail when no device is detected (e.g., dedicated device lab):
+#   set GLASSBRIDGE_REQUIRE_DEVICE=1 in the runner environment or use
+#   test:device:ci which sets it automatically.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_model:
+        description: "Partial model string to match preferred device (default: Pixel 10)"
+        required: false
+        default: "Pixel 10"
+      require_device:
+        description: "Hard-fail when no device found (default: true for this workflow)"
+        required: false
+        default: "true"
+
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Gate: only run the device job when the label is present (pull_request
+  # trigger) or when triggered manually (workflow_dispatch always proceeds).
+  # -------------------------------------------------------------------------
+  check-label:
+    name: Check hardware-in-the-loop label
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif echo '${{ toJson(github.event.pull_request.labels.*.name) }}' | grep -q '"hardware-in-the-loop"'; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # -------------------------------------------------------------------------
+  # Device smoke + integration tests — self-hosted runner with USB device
+  # -------------------------------------------------------------------------
+  device-tests:
+    name: Device Smoke + Integration Tests
+    needs: check-label
+    if: needs.check-label.outputs.should_run == 'true'
+
+    # Requires a self-hosted runner registered with the "android-device" label.
+    # The runner must have a physical Android device attached via USB.
+    runs-on: [self-hosted, android-device]
+
+    timeout-minutes: 20
+
+    env:
+      ANDROID_TARGET_MODEL: ${{ github.event.inputs.target_model || 'Pixel 10' }}
+      # Hard-fail on self-hosted runner — device is expected to be present.
+      GLASSBRIDGE_REQUIRE_DEVICE: ${{ github.event.inputs.require_device || '1' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (server + web)
+        run: npm run build
+
+      # Device smoke tests — exercises real ADB/USB communication paths.
+      # GLASSBRIDGE_REQUIRE_DEVICE=1 (set in env above) causes the test runner
+      # to fail immediately if no device is detected rather than skipping tests.
+      - name: Device smoke tests
+        run: npm run test:device
+
+      # Integration tests run here too so any regressions in the combined
+      # device + backend stack surface in the same CI run.
+      - name: Integration tests (real backend, no device required)
+        run: npm run test:integration
+
+      - name: Upload device test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-test-logs-${{ github.sha }}
+          retention-days: 14
+          path: |
+            test-results/
+            *.log
