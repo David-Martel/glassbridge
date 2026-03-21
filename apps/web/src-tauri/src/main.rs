@@ -9,6 +9,9 @@
 // child process and polled /api/health for up to 20 seconds.  That code has
 // been removed in favour of the embedded server below.
 
+// Phase 2-5 modules are wired in but not all public APIs are called from
+// routes yet — suppress dead_code until every handler is hooked up.
+#![allow(dead_code)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adb;
@@ -16,11 +19,17 @@ mod adb_mock;
 #[cfg(feature = "native-adb")]
 #[allow(dead_code)]
 mod adb_native;
+mod agent_bus;
 mod config;
+mod file_transfer;
 mod help;
+mod logcat;
+mod property_cache;
 mod registry;
 mod server;
+mod telemetry;
 mod tooling;
+mod wifi_adb;
 
 use serde::Serialize;
 use std::{
@@ -111,9 +120,28 @@ fn launch_embedded_server() -> Result<DesktopState, String> {
     let ws_url = format!("ws://127.0.0.1:{port}/ws");
 
     // Build the application state (opens SQLite, creates ADB backend).
-    let app_state =
+    let base_state =
         server::AppState::new(cfg.vendor_root.clone(), &cfg.data_root, repo_root.clone())
             .map_err(|e| format!("Failed to initialise app state: {e}"))?;
+
+    // Attempt to connect to the agent-bus (best-effort; None if not running).
+    // `launch_embedded_server` is synchronous but runs within `rt.enter()`, so
+    // we can drive async code via `block_on` on the current runtime handle.
+    let bus = tokio::runtime::Handle::current()
+        .block_on(agent_bus::AgentBusClient::try_connect("glassbridge"));
+    if let Some(ref b) = bus {
+        let api_msg = format!("GlassBridge desktop started — API on {api_origin}");
+        tokio::runtime::Handle::current().block_on(async {
+            let _ = b
+                .set_presence("online", &["adb", "device-monitor", "wifi-adb", "logcat"])
+                .await;
+            let _ = b
+                .post_message("all", "status", &api_msg, &["repo:pixel", "glassbridge"])
+                .await;
+        });
+    }
+
+    let app_state = base_state.with_agent_bus(bus);
 
     // Spawn the Axum server in a background task.  It runs until the process
     // exits — no graceful shutdown needed because there are no child processes

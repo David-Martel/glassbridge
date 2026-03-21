@@ -388,11 +388,12 @@ try {
     return
   }
 
-  Write-Host "Building the backend control plane for desktop launch..."
-  npm run build --workspace apps/server
+  # NOTE: The Node.js backend (apps/server) is NOT built for desktop mode.
+  # main.rs now runs a self-contained Axum server in-process, so the Node.js
+  # control plane is only required for browser-mode development (npm run dev).
 
   if ($BuildOnly) {
-    Write-Host "Building the Tauri desktop shell with CargoTools-compatible cargo settings..."
+    Write-Host "Building the web frontend for the Tauri desktop shell..."
     npm run build --workspace apps/web
     Invoke-DesktopCargo -Command "build" -AdditionalArgs @(
       "--release",

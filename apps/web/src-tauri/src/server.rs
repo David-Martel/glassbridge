@@ -30,7 +30,13 @@
 // than a deep copy.  The `Registry` is guarded by a `tokio::sync::Mutex`
 // because `rusqlite::Connection` is `!Send`.
 
-use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use axum::{
     body::Bytes,
@@ -50,11 +56,21 @@ use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn};
 
 use crate::{
-    adb::{AdbError, AdbProcessBackend, CommandResult, DeviceOps, DeviceRecord, ScrcpyPreset},
+    adb::{AdbError, CommandResult, DeviceOps, DeviceRecord, ScrcpyPreset},
+    agent_bus::AgentBusClient,
+    file_transfer::{FileTransfer, TransferError},
     help::help_topics,
+    logcat::{LogcatFilter, LogcatStream},
+    property_cache::{CacheError, PropertyCache},
     registry::{ApproveOptions, Registry, RegistryError, RegistryMapEntry, RegistrySummary},
+    telemetry::{TelemetryCollector, TimedOperation},
     tooling::{self, ToolError, ToolInfo, ToolStatus},
+    wifi_adb::{WifiAdb, WifiAdbError},
 };
+
+// Suppress unused-import warnings for items only used under feature gates.
+#[allow(unused_imports)]
+use crate::adb::create_adb_backend;
 
 // ---------------------------------------------------------------------------
 // Type conversion — adb::DeviceRecord → registry::DeviceRecord
@@ -103,6 +119,22 @@ pub enum ServerError {
     /// A tooling operation failed.
     #[error("Tooling error: {0}")]
     Tooling(#[from] ToolError),
+
+    /// A file transfer operation (push/pull) failed.
+    #[error("File transfer error: {0}")]
+    Transfer(#[from] TransferError),
+
+    /// A device property cache fetch failed.
+    #[error("Property cache error: {0}")]
+    Cache(#[from] CacheError),
+
+    /// A WiFi ADB operation failed.
+    #[error("WiFi ADB error: {0}")]
+    WifiAdb(#[from] WifiAdbError),
+
+    /// A logcat stream operation failed.
+    #[error("Logcat error: {0}")]
+    Logcat(String),
 }
 
 #[allow(dead_code)]
@@ -128,6 +160,11 @@ impl IntoResponse for ServerError {
             ServerError::DeviceNotFound { .. } => StatusCode::BAD_REQUEST,
             ServerError::Adb(AdbError::UnknownAction { .. }) => StatusCode::BAD_REQUEST,
             ServerError::InvalidBody(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            ServerError::WifiAdb(WifiAdbError::InvalidAddress { .. })
+            | ServerError::WifiAdb(WifiAdbError::InvalidPairingCode { .. }) => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
+            ServerError::Transfer(TransferError::LocalPath(_)) => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
@@ -236,7 +273,7 @@ impl Serialize for ScrcpyPreset {
 /// because `rusqlite::Connection` is `!Send`.
 #[derive(Clone)]
 pub struct AppState {
-    /// ADB operations backend.  Production: [`AdbProcessBackend`].
+    /// ADB operations backend.  Production: uses `create_adb_backend` factory.
     pub adb: Arc<dyn DeviceOps + Send + Sync>,
     /// Persistent SQLite-backed device registry.
     pub registry: Arc<Mutex<Registry>>,
@@ -244,12 +281,24 @@ pub struct AppState {
     pub vendor_root: PathBuf,
     /// Repository root used to locate the bootstrap script.
     pub repo_root: PathBuf,
+    /// Per-device cached properties (model, screen size, battery, etc.).
+    pub property_cache: PropertyCache,
+    /// Performance telemetry ring-buffer for ADB operations.
+    pub telemetry: Arc<TelemetryCollector>,
+    /// Map of device serial → active logcat stream.
+    pub logcat_streams: Arc<Mutex<HashMap<String, LogcatStream>>>,
+    /// WiFi ADB helper (connect / disconnect / pair / tcpip).
+    pub wifi_adb: WifiAdb,
+    /// Optional agent-bus HTTP client — `None` when the bus is not running.
+    pub agent_bus: Option<AgentBusClient>,
 }
 
 impl AppState {
     /// Construct an [`AppState`] from concrete paths.
     ///
     /// Opens the SQLite registry at `data_root/device-registry.db`.
+    /// Uses [`create_adb_backend`] so the native TCP backend is preferred when
+    /// the `native-adb` feature is enabled.
     ///
     /// # Errors
     ///
@@ -257,16 +306,54 @@ impl AppState {
     /// the schema cannot be applied.
     pub fn new(
         vendor_root: PathBuf,
-        data_root: &std::path::Path,
+        data_root: &Path,
         repo_root: PathBuf,
     ) -> Result<Self, RegistryError> {
         let registry = Registry::open(data_root)?;
         Ok(Self {
-            adb: Arc::new(AdbProcessBackend::new(&vendor_root)),
+            adb: crate::adb::create_adb_backend(&vendor_root),
+            registry: Arc::new(Mutex::new(registry)),
+            wifi_adb: WifiAdb::new(&vendor_root),
+            vendor_root,
+            repo_root,
+            property_cache: PropertyCache::new(),
+            telemetry: Arc::new(TelemetryCollector::new()),
+            logcat_streams: Arc::new(Mutex::new(HashMap::new())),
+            agent_bus: None,
+        })
+    }
+
+    /// Return a new [`AppState`] with the given `agent_bus` client wired in.
+    ///
+    /// Designed to be called from `launch_embedded_server` after an async
+    /// `AgentBusClient::try_connect` — avoids making `new` itself async.
+    #[must_use]
+    pub fn with_agent_bus(mut self, bus: Option<AgentBusClient>) -> Self {
+        self.agent_bus = bus;
+        self
+    }
+}
+
+// Convenience: allow tests to construct AppState directly with a stub ADB.
+impl AppState {
+    #[cfg(test)]
+    pub(crate) fn new_with_adb(
+        adb: Arc<dyn DeviceOps + Send + Sync>,
+        registry: Registry,
+        vendor_root: PathBuf,
+        repo_root: PathBuf,
+    ) -> Self {
+        Self {
+            wifi_adb: WifiAdb::new(&vendor_root),
+            adb,
             registry: Arc::new(Mutex::new(registry)),
             vendor_root,
             repo_root,
-        })
+            property_cache: PropertyCache::new(),
+            telemetry: Arc::new(TelemetryCollector::new()),
+            logcat_streams: Arc::new(Mutex::new(HashMap::new())),
+            agent_bus: None,
+        }
     }
 }
 
@@ -323,6 +410,32 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/tools/bootstrap", post(tools_bootstrap_handler))
         // Help
         .route("/api/help/topics", get(help_topics_handler))
+        // Logcat (start/stop + poll recent entries)
+        .route(
+            "/api/devices/{serial}/logcat/start",
+            post(logcat_start_handler),
+        )
+        .route(
+            "/api/devices/{serial}/logcat/stop",
+            post(logcat_stop_handler),
+        )
+        .route(
+            "/api/devices/{serial}/logcat/entries",
+            get(logcat_entries_handler),
+        )
+        // File transfer
+        .route("/api/devices/{serial}/push", post(push_handler))
+        .route("/api/devices/{serial}/pull", post(pull_handler))
+        // Device properties (cached)
+        .route("/api/devices/{serial}/properties", get(properties_handler))
+        // Telemetry
+        .route("/api/telemetry", get(telemetry_handler))
+        // WiFi ADB
+        .route("/api/wifi/connect", post(wifi_connect_handler))
+        .route("/api/wifi/disconnect", post(wifi_disconnect_handler))
+        .route("/api/wifi/pair", post(wifi_pair_handler))
+        .route("/api/wifi/tcpip", post(wifi_tcpip_handler))
+        .route("/api/wifi/devices", get(wifi_devices_handler))
         // WebSocket snapshot feed
         .route("/ws", get(ws_handler))
         .layer(CorsLayer::permissive())
@@ -472,7 +585,12 @@ async fn health_handler() -> Json<serde_json::Value> {
 async fn list_devices_handler(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, ServerError> {
-    let devices = snapshot_devices(&state).await?;
+    let mut timer = TimedOperation::start(Arc::clone(&state.telemetry), "list_devices", "process");
+    let result = snapshot_devices(&state).await;
+    if result.is_err() {
+        timer.fail();
+    }
+    let devices = result?;
     Ok(Json(serde_json::json!({ "devices": devices })))
 }
 
@@ -490,7 +608,12 @@ async fn screenshot_handler(
     State(state): State<AppState>,
     AxumPath(serial): AxumPath<String>,
 ) -> Result<Response, ServerError> {
-    let png: Vec<u8> = state.adb.capture_screenshot(&serial).await?;
+    let mut timer = TimedOperation::start(Arc::clone(&state.telemetry), "screenshot", "process");
+    let result = state.adb.capture_screenshot(&serial).await;
+    if result.is_err() {
+        timer.fail();
+    }
+    let png: Vec<u8> = result?;
     Ok((
         [
             (header::CONTENT_TYPE, "image/png"),
@@ -601,7 +724,12 @@ async fn shell_handler(
             "command must not be empty".to_owned(),
         ));
     }
-    Ok(Json(state.adb.shell_command(&serial, &body.command).await?))
+    let mut timer = TimedOperation::start(Arc::clone(&state.telemetry), "shell", "process");
+    let result = state.adb.shell_command(&serial, &body.command).await;
+    if result.is_err() {
+        timer.fail();
+    }
+    Ok(Json(result?))
 }
 
 // POST /api/devices/{serial}/scrcpy  — body: { preset: "latency"|"balanced"|"quality" }
@@ -752,6 +880,348 @@ async fn help_topics_handler() -> Json<serde_json::Value> {
 }
 
 // ---------------------------------------------------------------------------
+// Logcat handlers
+// ---------------------------------------------------------------------------
+
+/// Request body for `POST /api/devices/{serial}/logcat/start`.
+///
+/// All filter fields are optional; omitting them starts an unfiltered stream.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct LogcatStartBody {
+    /// Only emit entries from these tags (empty = no tag filter).
+    #[serde(default)]
+    tags: Vec<String>,
+    /// Minimum priority: `"verbose"`, `"debug"`, `"info"`, `"warn"`,
+    /// `"error"`, `"fatal"`, or `"silent"`.
+    min_priority: Option<String>,
+    /// Only emit entries from this PID.
+    pid: Option<u32>,
+}
+
+// POST /api/devices/{serial}/logcat/start
+async fn logcat_start_handler(
+    State(state): State<AppState>,
+    AxumPath(serial): AxumPath<String>,
+    body: Option<Json<LogcatStartBody>>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    let body = body.map(|Json(b)| b).unwrap_or_default();
+
+    let min_priority = body.min_priority.as_deref().and_then(|s| {
+        use crate::logcat::LogPriority;
+        match s {
+            "verbose" => Some(LogPriority::Verbose),
+            "debug" => Some(LogPriority::Debug),
+            "info" => Some(LogPriority::Info),
+            "warn" => Some(LogPriority::Warn),
+            "error" => Some(LogPriority::Error),
+            "fatal" => Some(LogPriority::Fatal),
+            "silent" => Some(LogPriority::Silent),
+            _ => None,
+        }
+    });
+
+    let filter = LogcatFilter {
+        tags: body.tags,
+        min_priority,
+        pid: body.pid,
+    };
+
+    // Check if a stream is already running for this serial.
+    {
+        let guard = state.logcat_streams.lock().await;
+        if let Some(stream) = guard.get(&serial) {
+            if stream.is_running() {
+                return Err(ServerError::Logcat(format!(
+                    "logcat stream already running for {serial}"
+                )));
+            }
+        }
+    }
+
+    let stream = LogcatStream::start(serial.clone(), &state.vendor_root, filter)
+        .await
+        .map_err(|e| ServerError::Logcat(e.to_string()))?;
+
+    state
+        .logcat_streams
+        .lock()
+        .await
+        .insert(serial.clone(), stream);
+
+    info!(serial = %serial, "logcat stream started");
+    Ok(Json(serde_json::json!({ "ok": true, "serial": serial })))
+}
+
+// POST /api/devices/{serial}/logcat/stop
+async fn logcat_stop_handler(
+    State(state): State<AppState>,
+    AxumPath(serial): AxumPath<String>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    let mut guard = state.logcat_streams.lock().await;
+    if let Some(mut stream) = guard.remove(&serial) {
+        stream.stop().await;
+        info!(serial = %serial, "logcat stream stopped");
+        Ok(Json(serde_json::json!({ "ok": true, "serial": serial })))
+    } else {
+        Ok(Json(
+            serde_json::json!({ "ok": false, "serial": serial, "message": "no stream running" }),
+        ))
+    }
+}
+
+// GET /api/devices/{serial}/logcat/entries  — fetch buffered entries via receiver drain
+async fn logcat_entries_handler(
+    State(state): State<AppState>,
+    AxumPath(serial): AxumPath<String>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    let guard = state.logcat_streams.lock().await;
+    let Some(stream) = guard.get(&serial) else {
+        return Ok(Json(serde_json::json!({
+            "serial": serial,
+            "running": false,
+            "entries": [],
+        })));
+    };
+
+    // Drain all currently buffered entries from a fresh receiver.
+    let mut rx = stream.subscribe();
+    let mut entries = Vec::new();
+
+    // `try_recv` returns all already-buffered messages without blocking.
+    loop {
+        match rx.try_recv() {
+            Ok(entry) => entries.push(entry),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => break,
+            Err(tokio::sync::broadcast::error::TryRecvError::Closed) => break,
+            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => break,
+        }
+    }
+
+    let running = stream.is_running();
+    Ok(Json(serde_json::json!({
+        "serial": serial,
+        "running": running,
+        "entries": entries,
+    })))
+}
+
+// ---------------------------------------------------------------------------
+// File transfer handlers
+// ---------------------------------------------------------------------------
+
+/// Request body for `POST /api/devices/{serial}/push`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PushBody {
+    /// Absolute local filesystem path of the file to push.
+    local_path: String,
+    /// Absolute remote device path destination.
+    remote_path: String,
+}
+
+// POST /api/devices/{serial}/push
+async fn push_handler(
+    State(state): State<AppState>,
+    AxumPath(serial): AxumPath<String>,
+    Json(body): Json<PushBody>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    if body.local_path.is_empty() {
+        return Err(ServerError::InvalidBody(
+            "localPath must not be empty".into(),
+        ));
+    }
+    if body.remote_path.is_empty() {
+        return Err(ServerError::InvalidBody(
+            "remotePath must not be empty".into(),
+        ));
+    }
+
+    FileTransfer::push(
+        &serial,
+        Path::new(&body.local_path),
+        &body.remote_path,
+        &state.vendor_root,
+        None,
+    )
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "serial": serial,
+        "localPath": body.local_path,
+        "remotePath": body.remote_path,
+    })))
+}
+
+/// Request body for `POST /api/devices/{serial}/pull`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PullBody {
+    /// Absolute remote device path of the file to pull.
+    remote_path: String,
+    /// Absolute local filesystem destination path.
+    local_path: String,
+}
+
+// POST /api/devices/{serial}/pull
+async fn pull_handler(
+    State(state): State<AppState>,
+    AxumPath(serial): AxumPath<String>,
+    Json(body): Json<PullBody>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    if body.remote_path.is_empty() {
+        return Err(ServerError::InvalidBody(
+            "remotePath must not be empty".into(),
+        ));
+    }
+    if body.local_path.is_empty() {
+        return Err(ServerError::InvalidBody(
+            "localPath must not be empty".into(),
+        ));
+    }
+
+    FileTransfer::pull(
+        &serial,
+        &body.remote_path,
+        Path::new(&body.local_path),
+        &state.vendor_root,
+        None,
+    )
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "serial": serial,
+        "remotePath": body.remote_path,
+        "localPath": body.local_path,
+    })))
+}
+
+// ---------------------------------------------------------------------------
+// Device properties handler
+// ---------------------------------------------------------------------------
+
+// GET /api/devices/{serial}/properties
+async fn properties_handler(
+    State(state): State<AppState>,
+    AxumPath(serial): AxumPath<String>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    let props = state
+        .property_cache
+        .get_or_fetch(&serial, state.adb.as_ref())
+        .await?;
+
+    Ok(Json(
+        serde_json::to_value(&props).unwrap_or(serde_json::Value::Null),
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Telemetry handler
+// ---------------------------------------------------------------------------
+
+// GET /api/telemetry
+async fn telemetry_handler(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let summary = state.telemetry.summary();
+    let recent = state.telemetry.recent(50);
+    Json(serde_json::json!({
+        "summary": summary,
+        "recent": recent,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// WiFi ADB handlers
+// ---------------------------------------------------------------------------
+
+/// Request body for `POST /api/wifi/connect`.
+#[derive(Deserialize)]
+struct WifiAddressBody {
+    address: String,
+}
+
+// POST /api/wifi/connect
+async fn wifi_connect_handler(
+    State(state): State<AppState>,
+    Json(body): Json<WifiAddressBody>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    let message = state.wifi_adb.connect(&body.address).await?;
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "address": body.address,
+        "message": message,
+    })))
+}
+
+// POST /api/wifi/disconnect
+async fn wifi_disconnect_handler(
+    State(state): State<AppState>,
+    Json(body): Json<WifiAddressBody>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    let message = state.wifi_adb.disconnect(&body.address).await?;
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "address": body.address,
+        "message": message,
+    })))
+}
+
+/// Request body for `POST /api/wifi/pair`.
+#[derive(Deserialize)]
+struct WifiPairBody {
+    address: String,
+    code: String,
+}
+
+// POST /api/wifi/pair
+async fn wifi_pair_handler(
+    State(state): State<AppState>,
+    Json(body): Json<WifiPairBody>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    let message = state.wifi_adb.pair(&body.address, &body.code).await?;
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "address": body.address,
+        "message": message,
+    })))
+}
+
+/// Request body for `POST /api/wifi/tcpip`.
+#[derive(Deserialize)]
+struct WifiTcpipBody {
+    serial: String,
+    #[serde(default = "default_adb_port")]
+    port: u16,
+}
+
+fn default_adb_port() -> u16 {
+    5555
+}
+
+// POST /api/wifi/tcpip
+async fn wifi_tcpip_handler(
+    State(state): State<AppState>,
+    Json(body): Json<WifiTcpipBody>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    let message = state.wifi_adb.enable_tcpip(&body.serial, body.port).await?;
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "serial": body.serial,
+        "port": body.port,
+        "message": message,
+    })))
+}
+
+// GET /api/wifi/devices
+async fn wifi_devices_handler(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ServerError> {
+    let devices = state.wifi_adb.list_wifi_devices().await?;
+    Ok(Json(serde_json::json!({ "devices": devices })))
+}
+
+// ---------------------------------------------------------------------------
 // WebSocket handler — broadcasts snapshots every 2 seconds
 // ---------------------------------------------------------------------------
 
@@ -885,14 +1355,12 @@ mod tests {
     }
 
     fn test_state() -> AppState {
-        AppState {
-            adb: Arc::new(StubAdb),
-            registry: Arc::new(Mutex::new(
-                Registry::open_in_memory().expect("in-memory registry must open"),
-            )),
-            vendor_root: PathBuf::from("/nonexistent/vendor"),
-            repo_root: PathBuf::from("/nonexistent/repo"),
-        }
+        AppState::new_with_adb(
+            Arc::new(StubAdb),
+            Registry::open_in_memory().expect("in-memory registry must open"),
+            PathBuf::from("/nonexistent/vendor"),
+            PathBuf::from("/nonexistent/repo"),
+        )
     }
 
     fn test_router() -> Router {

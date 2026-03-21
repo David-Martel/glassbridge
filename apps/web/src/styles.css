@@ -437,3 +437,51 @@ h1 {
     justify-content: flex-start;
   }
 }
+
+/* WiFi ADB panel */
+.wifi-device-row {
+  grid-template-columns: 1fr auto;
+}
+
+/* Device properties table */
+.props-table {
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.props-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 12px;
+  background: rgba(239, 246, 242, 0.95);
+  font-size: 0.9rem;
+}
+
+.props-row span {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #547367;
+  align-self: center;
+}
+
+/* Telemetry stats grid */
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .telemetry-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .props-row {
+    grid-template-columns: 1fr;
+  }
+}

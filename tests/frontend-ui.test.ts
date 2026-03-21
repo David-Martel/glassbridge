@@ -129,7 +129,8 @@ test("frontend renders roster and posts approval actions", async () => {
   expect(document.body.textContent).toContain("Pixel 10 Pro XL");
   expect(document.body.textContent).toContain("Guided Help");
   const screenPreview = await waitForScreenPreview();
-  expect(screenPreview?.src).toContain("blob:mock-screen-preview");
+  expect(screenPreview).toBeTruthy();
+  expect(screenPreview?.src ?? "").toContain("blob:mock-screen-preview");
 
   const approveButton = [...document.querySelectorAll("button")].find(
     (button) => button.textContent?.includes("Approve"),

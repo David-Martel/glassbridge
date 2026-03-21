@@ -14,10 +14,17 @@
       "created": "2026-03-21T15:01:00Z",
       "project": "glassbridge",
       "agents_involved": [
-        "research-agent", "cicd-agent", "scrcpy-research-agent",
-        "test-infra-agent", "cicd-impl-agent", "security-agent",
-        "code-reviewer", "rust-server-agent", "rust-registry-agent",
-        "rust-adb-agent", "rust-fixer-agent"
+        "research-agent",
+        "cicd-agent",
+        "scrcpy-research-agent",
+        "test-infra-agent",
+        "cicd-impl-agent",
+        "security-agent",
+        "code-reviewer",
+        "rust-server-agent",
+        "rust-registry-agent",
+        "rust-adb-agent",
+        "rust-fixer-agent"
       ],
       "summary": "Phase 0 + Phase 1: CI/CD hardening, build tooling (build.ps1 + justfile), and native Rust server migration replacing Node.js Fastify backend with embedded Axum. 170 tests, clippy clean."
     }

@@ -35,6 +35,40 @@ type ApprovedDevice = {
 
 type ScreenOrientation = "unknown" | "portrait" | "landscape" | "square";
 
+type DeviceProperties = {
+  serial: string;
+  model: string;
+  manufacturer: string;
+  androidVersion: string;
+  sdkVersion: number;
+  screenWidth: number;
+  screenHeight: number;
+  screenDensity: number;
+  batteryLevel: number | null;
+};
+
+type TelemetrySummary = {
+  totalOperations: number;
+  totalErrors: number;
+  avgLatencyMs: number;
+  p95LatencyMs: number;
+};
+
+type WifiDevice = {
+  address: string;
+  serial: string;
+  model: string | null;
+  connected: boolean;
+};
+
+type LogcatEntry = {
+  timestamp: string;
+  pid: number;
+  priority: string;
+  tag: string;
+  message: string;
+};
+
 const app = document.querySelector<HTMLDivElement>("#app");
 
 if (!app) {
@@ -62,6 +96,11 @@ const state = {
   runtimeLaunchTarget: "",
   runtimeError: "",
   log: [] as string[],
+  deviceProperties: null as DeviceProperties | null,
+  telemetry: null as TelemetrySummary | null,
+  wifiDevices: [] as WifiDevice[],
+  logcatRunning: false,
+  logcatEntries: [] as LogcatEntry[],
 };
 
 let runtimeConfig: RuntimeConfig | null = null;
@@ -111,6 +150,8 @@ async function initialize() {
     refreshDevices(),
     refreshHelp(),
     refreshApprovedDevices(),
+    refreshWifiDevices(),
+    refreshTelemetry(),
   ]);
 }
 
@@ -133,9 +174,11 @@ async function refreshDevices() {
   if (state.selectedSerial) {
     await refreshPackages();
     await refreshScreenCapture();
+    await refreshProperties();
   } else {
     state.packages = [];
     clearScreenCapture();
+    state.deviceProperties = null;
   }
 
   render();
@@ -167,6 +210,55 @@ async function refreshApprovedDevices() {
   const payload = await response.json();
   state.approvedDevices = payload.devices;
   render();
+}
+
+async function refreshProperties() {
+  if (!state.selectedSerial) {
+    state.deviceProperties = null;
+    render();
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      apiUrl(
+        `/api/devices/${encodeURIComponent(state.selectedSerial)}/properties`,
+      ),
+    );
+    if (!response.ok) return;
+    const payload = await response.json();
+    state.deviceProperties = payload;
+    render();
+  } catch {
+    // Properties endpoint may not be available yet — silent no-op.
+  }
+}
+
+async function refreshTelemetry() {
+  try {
+    const response = await fetch(apiUrl("/api/telemetry"));
+    if (!response.ok) return;
+    const payload = await response.json();
+    const summary = payload.summary ?? payload;
+    if (summary && typeof summary.totalOperations === "number") {
+      state.telemetry = summary;
+      render();
+    }
+  } catch {
+    // Telemetry endpoint may not be available yet — silent no-op.
+  }
+}
+
+async function refreshWifiDevices() {
+  try {
+    const response = await fetch(apiUrl("/api/wifi/devices"));
+    if (!response.ok) return;
+    const payload = await response.json();
+    state.wifiDevices = payload.devices ?? [];
+    render();
+  } catch {
+    // WiFi endpoint may not be available yet — silent no-op.
+  }
 }
 
 async function refreshScreenCapture() {
@@ -327,6 +419,25 @@ function render() {
             </div>
             <p class="hint">Use scrcpy for low-latency mirroring and direct interaction. The API UI is for orchestration and fast device ops.</p>
           </section>
+
+          <section class="card">
+            <div class="section-head">
+              <h2>WiFi ADB</h2>
+              <p>Wireless device management</p>
+            </div>
+            <form class="inline-form" data-form="wifi-connect">
+              <label class="wide">Address<input name="address" type="text" placeholder="192.168.1.100:5555" /></label>
+              <button>Connect</button>
+            </form>
+            <form class="inline-form" data-form="wifi-pair">
+              <label>Address<input name="address" type="text" placeholder="192.168.1.100:5555" /></label>
+              <label>Code<input name="code" type="text" placeholder="123456" /></label>
+              <button>Pair</button>
+            </form>
+            <div class="device-list">
+              ${state.wifiDevices.map(renderWifiDevice).join("") || '<p class="empty">No WiFi devices.</p>'}
+            </div>
+          </section>
         </section>
 
         <section class="column">
@@ -409,6 +520,24 @@ function render() {
               <input name="command" type="text" placeholder="getprop ro.product.model" ${selected ? "" : "disabled"} />
               <button ${selected ? "" : "disabled"}>Run</button>
             </form>
+          </section>
+
+          <section class="card">
+            <div class="section-head">
+              <h2>Device Info</h2>
+              <p>${selected ? "Properties" : "Select a device"}</p>
+            </div>
+            ${state.deviceProperties ? renderDeviceProperties(state.deviceProperties) : '<p class="empty">No properties loaded.</p>'}
+            <button data-action="refresh-properties" ${selected ? "" : "disabled"}>Refresh</button>
+          </section>
+
+          <section class="card">
+            <div class="section-head">
+              <h2>Performance</h2>
+              <p>Operation telemetry</p>
+            </div>
+            ${state.telemetry ? renderTelemetry(state.telemetry) : '<p class="empty">No telemetry data.</p>'}
+            <button data-action="refresh-telemetry">Refresh</button>
           </section>
 
           <section class="card">
@@ -685,6 +814,64 @@ function bindEvents() {
   }
 
   syncScreenRefreshTimer();
+
+  bindAction("refresh-properties", async () => {
+    await refreshProperties();
+    pushLog(`Refreshed device properties for ${state.selectedSerial}`);
+  });
+
+  bindAction("refresh-telemetry", async () => {
+    await refreshTelemetry();
+    pushLog("Refreshed performance telemetry.");
+  });
+
+  const wifiConnectForm = document.querySelector<HTMLFormElement>(
+    "[data-form='wifi-connect']",
+  );
+  if (wifiConnectForm) {
+    wifiConnectForm.onsubmit = async (event) => {
+      event.preventDefault();
+      const formData = new FormData(wifiConnectForm);
+      const address = String(formData.get("address") ?? "").trim();
+      if (!address) {
+        return;
+      }
+      await post(apiUrl("/api/wifi/connect"), { address });
+      await refreshWifiDevices();
+      pushLog(`WiFi connect requested: ${address}`);
+      wifiConnectForm.reset();
+    };
+  }
+
+  const wifiPairForm = document.querySelector<HTMLFormElement>(
+    "[data-form='wifi-pair']",
+  );
+  if (wifiPairForm) {
+    wifiPairForm.onsubmit = async (event) => {
+      event.preventDefault();
+      const formData = new FormData(wifiPairForm);
+      const address = String(formData.get("address") ?? "").trim();
+      const code = String(formData.get("code") ?? "").trim();
+      if (!address || !code) {
+        return;
+      }
+      await post(apiUrl("/api/wifi/pair"), { address, code });
+      await refreshWifiDevices();
+      pushLog(`WiFi pair requested: ${address}`);
+      wifiPairForm.reset();
+    };
+  }
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>(
+    "[data-wifi-disconnect]",
+  )) {
+    button.onclick = async () => {
+      const address = button.dataset.wifiDisconnect ?? "";
+      await post(apiUrl("/api/wifi/disconnect"), { address });
+      await refreshWifiDevices();
+      pushLog(`WiFi disconnected: ${address}`);
+    };
+  }
 }
 
 function bindAction(action: string, handler: () => Promise<void>) {
@@ -878,6 +1065,70 @@ function renderPackage(packageName: string) {
       <div class="row-actions">
         <button data-launch="${packageName}" ${state.selectedSerial ? "" : "disabled"}>Launch</button>
         <button data-stop="${packageName}" ${state.selectedSerial ? "" : "disabled"}>Force Stop</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderWifiDevice(device: WifiDevice) {
+  return `
+    <div class="package-row wifi-device-row">
+      <div>
+        <strong>${escapeHtml(device.model ?? device.serial)}</strong>
+        <p>${escapeHtml(device.address)}</p>
+      </div>
+      <div class="row-actions">
+        <span class="badge ${device.connected ? "badge-approved" : "badge-candidate"}">${device.connected ? "connected" : "offline"}</span>
+        <button data-wifi-disconnect="${escapeHtml(device.address)}" ${device.connected ? "" : "disabled"}>Disconnect</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderDeviceProperties(props: DeviceProperties) {
+  const rows: Array<[string, string]> = [
+    ["Manufacturer", props.manufacturer],
+    ["Model", props.model],
+    ["Android", props.androidVersion],
+    ["SDK", String(props.sdkVersion)],
+    ["Resolution", `${props.screenWidth} x ${props.screenHeight}`],
+    ["Density", `${props.screenDensity} dpi`],
+    ["Battery", props.batteryLevel !== null ? `${props.batteryLevel}%` : "n/a"],
+  ];
+  return `
+    <div class="props-table">
+      ${rows
+        .map(
+          ([label, value]) => `
+        <div class="props-row">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderTelemetry(telemetry: TelemetrySummary) {
+  return `
+    <div class="telemetry-grid">
+      <div class="screen-stat">
+        <span>Total ops</span>
+        <strong>${telemetry.totalOperations.toLocaleString()}</strong>
+      </div>
+      <div class="screen-stat">
+        <span>Errors</span>
+        <strong>${telemetry.totalErrors.toLocaleString()}</strong>
+      </div>
+      <div class="screen-stat">
+        <span>Avg latency</span>
+        <strong>${telemetry.avgLatencyMs.toFixed(1)} ms</strong>
+      </div>
+      <div class="screen-stat">
+        <span>p95 latency</span>
+        <strong>${telemetry.p95LatencyMs.toFixed(1)} ms</strong>
       </div>
     </div>
   `;

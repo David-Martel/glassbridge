@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "io.github.davidmartel.glassbridge",
   "build": {
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build --workspace apps/web",
     "beforeDevCommand": "npm run dev -- --host 127.0.0.1 --strictPort",
     "devUrl": "http://127.0.0.1:5173",
     "frontendDist": "../dist"

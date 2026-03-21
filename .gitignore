@@ -4,6 +4,7 @@ apps/*/dist/
 .cargo/config.toml
 apps/web/src-tauri/target/
 apps/web/src-tauri/cargo-target-check/
+apps/web/src-tauri/cargo-target-codex/
 apps/web/src-tauri/gen/
 output/
 staging/desktop/*.exe

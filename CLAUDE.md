@@ -134,13 +134,19 @@ The frontend is vanilla TypeScript with no framework. UI updates call `render()`
 
 ### Desktop Shell (`apps/web/src-tauri/`)
 
-Tauri v2 app in Rust. The `main.rs`:
-- Launches the Node.js backend as a child process on a dynamically reserved port
-- Polls `/api/health` until healthy (20s timeout)
-- Exposes `desktop_bootstrap` Tauri command returning API origin + WS URL to the frontend
-- Kills the backend child process on app exit
+Tauri v2 app in Rust. The desktop shell is a **single self-contained binary** — it does
+not require Node.js at runtime. The `main.rs`:
+- Starts an embedded Axum HTTP/WebSocket server in-process on a dynamically reserved port
+- Exposes `desktop_bootstrap` Tauri command returning the resolved API origin + WS URL to the frontend
+- No Node.js child process, no health-check polling, no `apps/server` dependency at runtime
 
-Desktop builds are orchestrated by `Launch-PixelDesktop.ps1` which handles CargoTools, sccache, staging, and build manifests. Always use the root npm scripts (`npm run desktop*`) rather than running cargo or tauri directly.
+The Node.js backend (`apps/server`) is only used for **browser-mode development**
+(`npm run dev`). It is not built or shipped as part of the desktop release.
+
+Desktop builds are orchestrated by `Launch-PixelDesktop.ps1` which handles CargoTools,
+sccache, staging, and build manifests. `tauri.conf.json` `beforeBuildCommand` builds only
+the web frontend (`apps/web`). Always use the root npm scripts (`npm run desktop*`) rather
+than running cargo or tauri directly.
 
 ### Data Flow
 
