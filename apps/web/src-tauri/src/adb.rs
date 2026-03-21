@@ -19,6 +19,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use thiserror::Error;
 
 use crate::tooling::{self, ToolError};
@@ -194,7 +195,7 @@ pub trait DeviceOps: Send + Sync {
 // ---------------------------------------------------------------------------
 
 /// Maps GlassBridge action names to Android keycodes.
-static KEY_MAP: std::sync::LazyLock<HashMap<&'static str, &'static str>> =
+pub(crate) static KEY_MAP: std::sync::LazyLock<HashMap<&'static str, &'static str>> =
     std::sync::LazyLock::new(|| {
         HashMap::from([
             ("home", "KEYCODE_HOME"),
@@ -424,6 +425,57 @@ impl DeviceOps for AdbProcessBackend {
 
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------------
+// Backend factory
+// ---------------------------------------------------------------------------
+
+/// Create the best available [`DeviceOps`] implementation for the given
+/// `vendor_root`.
+///
+/// When the `native-adb` feature is enabled (the default), this function
+/// attempts to construct an [`crate::adb_native::AdbNativeBackend`] that
+/// communicates with the ADB server over TCP without spawning any child
+/// processes.  If the native backend fails to initialise, or if the feature
+/// is disabled, the function falls back to [`AdbProcessBackend`].
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use std::path::Path;
+/// use std::sync::Arc;
+/// use glassbridge_desktop::adb::{create_adb_backend, DeviceOps};
+///
+/// # async fn example() {
+/// let backend: Arc<dyn DeviceOps + Send + Sync> =
+///     create_adb_backend(Path::new("/repo/vendor"));
+/// let devices = backend.list_devices().await.unwrap_or_default();
+/// println!("found {} device(s)", devices.len());
+/// # }
+/// ```
+#[allow(dead_code)]
+pub fn create_adb_backend(vendor_root: &Path) -> Arc<dyn DeviceOps + Send + Sync> {
+    #[cfg(feature = "native-adb")]
+    {
+        use crate::adb_native::AdbNativeBackend;
+
+        match AdbNativeBackend::new() {
+            Ok(native) => {
+                tracing::debug!("ADB backend: native TCP (127.0.0.1:5037)");
+                return Arc::new(native);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "native ADB backend unavailable, falling back to process-based"
+                );
+            }
+        }
+    }
+
+    tracing::debug!("ADB backend: process (adb.exe)");
+    Arc::new(AdbProcessBackend::new(vendor_root))
 }
 
 // ---------------------------------------------------------------------------

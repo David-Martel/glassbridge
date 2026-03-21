@@ -36,8 +36,8 @@ serde_json = "1"
 # SQLite registry (replaces node:sqlite DatabaseSync)
 rusqlite = { version = "0.34", features = ["bundled"] }
 
-# HTTP client (for health checks, future use)
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
+# HTTP client (health checks + agent-bus JSON requests)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "json"] }
 
 # Logging
 tracing = "0.1"
@@ -46,6 +46,22 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Utilities
 thiserror = "2"
 async-trait = "0.1"
+
+# Phase 2: Native ADB protocol (replaces adb.exe process spawning)
+adb_client = { version = "3.1", optional = true }
+
+# Phase 3: GPU-accelerated screen mirroring
+openh264 = { version = "0.2", optional = true }
+wgpu = { version = "24", optional = true }
+raw-window-handle = { version = "0.6", optional = true }
+
+# Phase 4: Additional tools
+image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg"] }
+
+[features]
+default = ["native-adb", "screen-mirror"]
+native-adb = ["dep:adb_client"]
+screen-mirror = ["dep:openh264", "dep:wgpu", "dep:raw-window-handle", "dep:image"]
 
 [dev-dependencies]
 # Temporary directories for tooling path-resolution tests.

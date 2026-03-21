@@ -1,3 +1,7 @@
+// Phase 2-5 modules are compiled but not yet wired into server routes or main.rs.
+// Suppress dead_code until integration is complete.
+#![allow(dead_code)]
+
 // lib.rs — re-exports testable logic from main.rs so cargo test can reach it
 // without running the Tauri application entry point.
 //
@@ -8,11 +12,25 @@
 
 pub mod adb;
 pub mod adb_mock;
+#[cfg(feature = "native-adb")]
+pub mod adb_native;
+pub mod agent_bus;
 pub mod config;
+#[cfg(feature = "screen-mirror")]
+pub mod decoder;
+pub mod file_transfer;
 pub mod help;
+pub mod logcat;
+pub mod property_cache;
 pub mod registry;
+#[cfg(feature = "screen-mirror")]
+pub mod renderer;
+#[cfg(feature = "screen-mirror")]
+pub mod scrcpy_protocol;
 pub mod server;
+pub mod telemetry;
 pub mod tooling;
+pub mod wifi_adb;
 
 pub mod desktop {
     use std::{

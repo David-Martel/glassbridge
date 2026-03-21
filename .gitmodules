@@ -1,0 +1,3 @@
+[submodule "vendor/scrcpy-src"]
+	path = vendor/scrcpy-src
+	url = https://github.com/Genymobile/scrcpy.git

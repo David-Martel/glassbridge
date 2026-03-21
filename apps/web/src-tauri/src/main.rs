@@ -13,6 +13,9 @@
 
 mod adb;
 mod adb_mock;
+#[cfg(feature = "native-adb")]
+#[allow(dead_code)]
+mod adb_native;
 mod config;
 mod help;
 mod registry;
